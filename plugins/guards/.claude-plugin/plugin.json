@@ -1,0 +1,6 @@
+{
+  "name": "guards",
+  "version": "1.0.0",
+  "description": "The guards of the DigitalniHR system in every place Claude runs (Mac, cloud with one or several repositories, routines): goal file with Cause and Research, forbidden commands, permission gate, event log, compaction guard.",
+  "author": { "name": "DigitalniHR" }
+}
