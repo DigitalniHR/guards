@@ -43,7 +43,7 @@ export const DENY = [
 ];
 
 // The body of a quoted here-doc that only writes a file (cat or tee into a file) is data, not a command: the words of a
-// rule in a report or a log do not block (clau-de-master audit, 28 Oct 2026). Any other here-doc stays checked.
+// rule in a report or a log do not block (CCO deep audit, 28 Oct 2026). Any other here-doc stays checked.
 export function commandText(command) {
   // A here-doc body is data (an issue body, a commit message), not a command: it leaves the text before matching
   // (system#97). Any verb, the tag quoted or not; the closing tag on its own line.

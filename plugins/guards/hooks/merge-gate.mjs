@@ -52,7 +52,26 @@ function checksOf({ ref, repo, dir }, cwd) {
     stdout = String(e.stdout || ''); stderr = String(e.stderr || e.message || '');
   }
   if (/no checks reported/i.test(stderr)) return [];
-  try { return JSON.parse(stdout); } catch { throw new Error(`gh pr checks gave no result (${stderr.trim().split('\n')[0] || 'no output'})`); }
+  try { return JSON.parse(stdout); } catch {
+    // `gh pr checks` reads GraphQL, which cloud sessions cannot reach; the REST check runs give the same verdict.
+    if (/graphql/i.test(stderr) && repo && /^\d+$/.test(String(ref))) return restChecks(gh, repo, ref, where);
+    throw new Error(`gh pr checks gave no result (${stderr.trim().split('\n')[0] || 'no output'})`);
+  }
+}
+
+// The bucket of one REST check run, as `gh pr checks` names it.
+export function bucketOf(run) {
+  if (run.status !== 'completed') return 'pending';
+  if (['failure', 'timed_out', 'action_required', 'startup_failure', 'stale'].includes(run.conclusion)) return 'fail';
+  if (run.conclusion === 'cancelled') return 'cancel';
+  if (run.conclusion === 'skipped' || run.conclusion === 'neutral') return 'skipping';
+  return 'pass';
+}
+
+function restChecks(gh, repo, ref, where) {
+  const api = (route) => JSON.parse(execFileSync(gh, ['api', route], { cwd: where, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 }));
+  const sha = api(`repos/${repo}/pulls/${ref}`).head.sha;
+  return (api(`repos/${repo}/commits/${sha}/check-runs?per_page=100`).check_runs || []).map((r) => ({ name: r.name, bucket: bucketOf(r) }));
 }
 
 if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
