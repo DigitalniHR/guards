@@ -27,6 +27,18 @@ test('an unmerged branch is blocked and named', () => {
   const r = run(`${DEL} wip`, repo); assert.equal(r.status, 2); assert.match(r.stderr, /not merged into origin\/main \(wip\)/);
 });
 test('a squash-merged branch passes', () => { assert.equal(run(`${DEL} sq`, repo).status, 0); });
+// system#183: GitHub squash-merges a branch; the local origin/main is not fetched yet.
+test('a branch squash-merged on the remote a second before passes (fetch)', () => {
+  git('checkout', '-q', '-b', 'late'); fs.writeFileSync(path.join(repo, 'd.txt'), 'd'); git('add', 'd.txt'); git('commit', '-q', '-m', 'd');
+  git('push', '-q', 'origin', 'late'); git('checkout', '-q', 'main');
+  const other = path.join(tmp, 'other'); execFileSync('git', ['clone', '-q', '-b', 'main', bare, other]);
+  const og = (...a) => execFileSync('git', ['-C', other, ...a], { encoding: 'utf8', env });
+  og('checkout', '-q', 'origin/late', '--', 'd.txt'); og('commit', '-q', '-m', 'squash of late'); og('push', '-q', 'origin', 'main');
+  const before = git('rev-parse', 'origin/main');
+  assert.equal(run(`${DEL} late`, repo).status, 0);
+  assert.notEqual(git('rev-parse', 'origin/main'), before);
+  const r = run(`${DEL} wip`, repo); assert.equal(r.status, 2); assert.match(r.stderr, /not merged into origin\/main \(wip\)/);
+});
 test('two names: one unmerged blocks the call', () => { assert.equal(run(`${DEL} done wip`, repo).status, 2); });
 test('the words inside a here-doc are data, not a command', () => {
   const cmd = `gh issue create --body "$(cat <<'EOF'\nThe hook blocked ${DEL} 18 times; git push --force is also blocked.\nEOF\n)"`;

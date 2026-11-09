@@ -33,7 +33,16 @@ try {
       const inMain = (n) => {
         try { return git('merge-tree', '--write-tree', 'origin/main', n).split('\n')[0] === git('rev-parse', 'origin/main^{tree}'); } catch { return false; }
       };
-      const unmerged = names.filter((n) => !merged.includes(n) && !inMain(n));
+      let unmerged = names.filter((n) => !merged.includes(n) && !inMain(n));
+      // A branch squash-merged on GitHub seconds before is not yet in the local origin/main (system#183):
+      // fetch origin main once and judge again. A failed fetch keeps the local judgment (fail closed).
+      if (unmerged.length && !noRepo) {
+        try {
+          execFileSync('git', ['-C', cwd, 'fetch', '-q', 'origin', 'main'], { stdio: 'ignore', timeout: 15000 });
+          merged = git('branch', '--merged', 'origin/main', '--format=%(refname:short)').split('\n').map((x) => x.trim()).filter(Boolean);
+          unmerged = unmerged.filter((n) => !merged.includes(n) && !inMain(n));
+        } catch { /* keep the local judgment */ }
+      }
       if (names.length && !unmerged.length) hit = undefined;
       else if (noRepo) hit = [hit[0], `git branch -D where the merge cannot be checked: ${cwd} is not a git repository with origin/main (${names.join(', ')})`, `run it in the repository (cd <repo> && ... or git -C <repo> ...)`];
       else if (unmerged.length) hit = [hit[0], `git branch -D of a branch not merged into origin/main (${unmerged.join(', ')})`, hit[2]];
