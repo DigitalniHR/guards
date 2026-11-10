@@ -9,7 +9,7 @@ const f = files(input.session_id);
 if (isAutomated(input.prompt)) process.exit(0);
 const before = goalState(f);
 fs.writeFileSync(f.prompt, String(input.prompt || '').slice(0, 2000));
-try { fs.unlinkSync(f.blocks); } catch {}
+try { fs.unlinkSync(f.blocks); } catch (e) { if (e.code !== 'ENOENT') process.stderr.write(`goal-prompt: ${e.message}\n`); }   // no file = nothing to reset; stderr of an exit-0 hook never reaches the model (system#206)
 
 const lines = [`Goal file of this session: ${f.goal}`];
 if (before.state === 'missing') {
