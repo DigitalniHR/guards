@@ -26,7 +26,7 @@ export function isAutomated(promptText) { return /^\s*(Base directory for this s
 export function parseGoal(text) {
   const g = { quick: /^\s*Quick:/m.test(text), missing: {} , open: [], decision: '' };
   if (g.quick) return g;
-  for (const key of ['Said', 'Wants', 'Cause', 'Research', 'Done when', 'Proof', 'Boss acts']) {
+  for (const key of ['Said', 'Wants', 'Cause', 'Exists', 'Research', 'Done when', 'Proof', 'Boss acts']) {
     // "Done when (all true):" with a numbered list under it is the form of standards/evals.md (8 Nov 2026).
     const m = text.match(new RegExp(`^${key}(?:\\s*\\([^)]*\\))?:[ \\t]*(.*)((?:\\n[ \\t]*(?:\\d+[.)]|[-*])[ \\t]+\\S.*)*)`, 'm'));
     const val = m ? `${m[1]} ${m[2].replace(/\s+/g, ' ')}`.trim() : '';
@@ -35,6 +35,10 @@ export function parseGoal(text) {
   if (g.Said && g.Wants && g.Said.toLowerCase() === g.Wants.toLowerCase()) g.missing.Wants = 'same as Said';
   // How we solve a problem (Boss, 8 Nov 2026): the class of the problem, not the case; best practice before the solution.
   if (g.Cause && g.Said && g.Cause.toLowerCase() === g.Said.toLowerCase()) g.missing.Cause = 'same as Said: name the class of problem, not the case';
+  // A cause that is only the case got past this gate and Boss steered 6 proposals in 24 h to the cause (system#228).
+  else if (g.Cause && !/\bclass\b/i.test(g.Cause)) g.missing.Cause = 'a case only: write "class: <the class of problem>; case: <this case>"';
+  // What exists before what is built: a new worker or rule beside an old one was the other half of the 6 (system#228).
+  if (g.Exists && !/^none found:\s*\S/i.test(g.Exists) && !/(https?:\/\/|[\w-]\/[\w.-]|\.(md|py|sh|mjs|js|json|ya?ml)\b|#\d+|\b(skill|worker|routine|hook|script|issue|standard)\b)/i.test(g.Exists)) g.missing.Exists = 'name the skills, workers, scripts, standards or issues read for this class, or "none found: <the search>"';
   if (g.Research && !/^mechanical:\s*\S/i.test(g.Research) && !/(https?:\/\/|\.md\b|standard)/i.test(g.Research)) g.missing.Research = 'name the standard file or the sources read, or "mechanical: <why no research>"';
   g.open = [...text.matchAll(/^- \[ \] (.+)$/gm)].map(m => m[1].trim());
   const steps = [...text.matchAll(/^- \[[ x]\] /gm)].length;
@@ -65,7 +69,8 @@ export function turnCalls(transcriptPath) {
 export const FORMAT = `Goal file format (Markdown, English, STE):
 Said: <what Boss wrote, one line>
 Wants: <the intent behind it: the higher goal, what he will do with the result; never the same as Said>
-Cause: <the class of problem this case is a sign of; the fix solves the class, never a rule for one case>
+Cause: class: <the class of problem this case is a sign of>; case: <this case>. The fix solves the class, never a rule for one case
+Exists: <what already exists for this class and was read: skills, workers, scripts, standards, issues; or "none found: <the search>">
 Research: <the standard file read or written, or the sources of best practice read before the solution; or "mechanical: <why no research>">
 Done when: <3 to 8 criteria, each true or false and checkable now, as Boss sees it; then "Not done when:" the likely half-done state (standards/evals.md)>
 Proof: <the check that shows the end state: a test, a listing, a page opened, a count before and after>

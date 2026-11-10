@@ -3,7 +3,7 @@ import test from 'node:test'; import assert from 'node:assert'; import fs from '
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'goal-prompt.mjs');
-const full = 'Said: fix x\nWants: x works for Boss\nCause: class y\nResearch: mechanical: rename a file\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [ ] do x\n## Boss-only decision\n';
+const full = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [ ] do x\n## Boss-only decision\n';
 function run(input, { goal, blocks } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-prompt-'));
   const dir = path.join(home, '.claude', 'goals'); fs.mkdirSync(dir, { recursive: true });
