@@ -23,6 +23,8 @@ if (loop.count >= MAX_GOAL_REPROMPTS || loop.idle) {
 }
 if (isAutomated(read(f.prompt)) || !read(f.prompt)) process.exit(0);
 const last = String(input.last_assistant_message || '');
+// A result line: a done or not-done word next to a proof (a link, a path, a PR or issue number).
+const RESULT = /\b(done|hotovo|hotové|not done|merged|closed|published|live|green|red|failed|blocked|fixed|nothing moved)\b[\s\S]*?(https?:\/\/|\/[\w.-]+\/|#\d+|PR ?\d+|\.md\b|\.py\b|\.sh\b)|(https?:\/\/|#\d+)[\s\S]*?\b(done|hotovo|merged|closed|published|live|green|fixed)\b/i;
 const { state, text } = goalState(f);
 const calls = turnCalls(input.transcript_path);
 const quick = state !== 'missing' && parseGoal(text).quick;
@@ -40,6 +42,9 @@ else {
   const asksAct = /\b(klikni|povol|schval|potvrď|nastav|otevři|přihlas|zadej|allow|click|approve|grant|sign in)\b/i.test(last);
   if (g.open.length && !g.decision) why = `the goal file has ${g.open.length} open step(s): ${g.open.map(s => `"${s}"`).join(', ')}. Finish them with proof, or write the one Boss-only decision that blocks them under "## Boss-only decision".`;
   else if (asksAct && /^none$/i.test(g['Boss acts'] || '')) why = `the last message asks Boss for an act, but the goal file says "Boss acts: none". Try the automatic route first (scripts, Terminal control, the memory of this machine). If Boss must act, list every act with the minutes under "Boss acts:", then ask once.`;
+  // Boss asked "hotovo?" 7 times in 24 h (CAO, 10 Nov 2026): a turn whose steps are all done ends with the result
+  // stated, not left for Boss to ask: done or not done, the proof (a link or a path), and what Boss must do, if anything.
+  else if (!g.open.length && !g.decision && !RESULT.test(last)) why = `every step of the goal file is done, but the last message does not say the result. End with the result first: done or not done, the proof (a link or a path) and "Boss acts: none" or the list, so Boss never has to ask "hotovo?".`;
 }
 if (!why) process.exit(0);
 fs.appendFileSync(f.blocks, `${mtime(f.prompt)}\n`);
