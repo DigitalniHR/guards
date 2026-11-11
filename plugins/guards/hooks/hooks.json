@@ -1,5 +1,5 @@
 {
-  "description": "One set of guards for the Mac, the cloud and the routines (Boss, 8 Nov 2026). The three guard hooks fail closed (catalog C-04). refresh.mjs keeps the cloud copy current at every session start. setup-pull.sh is Mac only.",
+  "description": "One set of guards for the Mac, the cloud and the routines (Boss, 8 Nov 2026). The three guard hooks fail closed (catalog C-04). refresh.mjs keeps the cloud copy current at every session start. On the Mac the checkout sync (bin/checkout_sync.sh --hook) is a SessionStart hook of ~/.claude/settings.json, outside this set.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -53,6 +53,14 @@
       }
     ],
     "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context-guard.mjs\""
+          }
+        ]
+      },
       {
         "matcher": "Write|Edit",
         "hooks": [

@@ -1,9 +1,10 @@
 // Stop: compares the end of the turn with the goal file. The turn may end when every step is done with its proof,
 // or when the file names the one Boss-only decision that blocks the end state. A turn that asks Boss for an act the
 // goal file did not plan is refused too: the model first tries the automatic route, then lists every act at once.
-// At most MAX_BLOCKS refusals per message of Boss, so a turn never loops (system#32).
+// At most MAX_BLOCKS refusals per message of Boss, so a turn never loops (system#32). A step "- [~] ... waits for
+// local_<id>" lets the turn end while a named session works; when all have ended it is an open step again (system#302).
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
-import { readInput, files, goalState, parseGoal, turnCalls, goalLoop, isAutomated, read, mtime, MAX_BLOCKS, MAX_GOAL_REPROMPTS, QUICK_CALLS } from './goal-lib.mjs';
+import { readInput, files, goalState, parseGoal, turnCalls, goalLoop, isAutomated, sessionRunning, read, mtime, MAX_BLOCKS, MAX_GOAL_REPROMPTS, QUICK_CALLS } from './goal-lib.mjs';
 
 const input = readInput();
 const f = files(input.session_id);
@@ -39,12 +40,13 @@ else if (state === 'missing') why = `this turn did work without a goal file (${f
 else if (state === 'stale') why = `the goal file ${f.goal} is older than the last message of Boss. Update it, finish its steps or confirm it, then end.`;
 else {
   const g = parseGoal(text);
+  for (const w of g.waiting) if (!w.sessions.length || !w.sessions.some(id => sessionRunning(id))) g.open.push(w.sessions.length ? `${w.step} (the sessions it waits for have ended: open their results now)` : w.step);
   const asksAct = /\b(klikni|povol|schval|potvrď|nastav|otevři|přihlas|zadej|allow|click|approve|grant|sign in)\b/i.test(last);
   if (g.open.length && !g.decision) why = `the goal file has ${g.open.length} open step(s): ${g.open.map(s => `"${s}"`).join(', ')}. Finish them with proof, or write the one Boss-only decision that blocks them under "## Boss-only decision".`;
   else if (asksAct && /^none$/i.test(g['Boss acts'] || '')) why = `the last message asks Boss for an act, but the goal file says "Boss acts: none". Try the automatic route first (scripts, Terminal control, the memory of this machine). If Boss must act, list every act with the minutes under "Boss acts:", then ask once.`;
   // Boss asked "hotovo?" 7 times in 24 h (CAO, 10 Nov 2026): a turn whose steps are all done ends with the result
   // stated, not left for Boss to ask: done or not done, the proof (a link or a path), and what Boss must do, if anything.
-  else if (!g.open.length && !g.decision && !RESULT.test(last)) why = `every step of the goal file is done, but the last message does not say the result. End with the result first: done or not done, the proof (a link or a path) and "Boss acts: none" or the list, so Boss never has to ask "hotovo?".`;
+  else if (!g.open.length && !g.waiting.length && !g.decision && !RESULT.test(last)) why = `every step of the goal file is done, but the last message does not say the result. End with the result first: done or not done, the proof (a link or a path) and "Boss acts: none" or the list, so Boss never has to ask "hotovo?".`;
 }
 if (!why) process.exit(0);
 fs.appendFileSync(f.blocks, `${mtime(f.prompt)}\n`);

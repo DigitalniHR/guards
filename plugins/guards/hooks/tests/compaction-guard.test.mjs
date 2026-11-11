@@ -8,15 +8,11 @@ const run = (h, stdin) => spawnSync('node', [hook], { input: stdin, env: { ...pr
 const countFile = (h, id) => path.join(h, '.claude', 'logs', 'compactions', `${id}.count`);
 const msg = (id) => JSON.stringify({ session_id: id });
 
-test('first and second compaction: count is stored, no output', () => {
-  const h = home();
-  for (const n of [1, 2]) { const r = run(h, msg('s1')); assert.equal(r.status, 0); assert.equal(r.stdout, ''); assert.equal(fs.readFileSync(countFile(h, 's1'), 'utf8'), String(n)); }
-});
-test('third compaction: the reminder to start a new session', () => {
-  const h = home(); run(h, msg('s1')); run(h, msg('s1'));
-  const r = run(h, msg('s1')); assert.equal(r.status, 0);
-  assert.match(r.stdout, /^This session has had 3 compactions\. Finish the current task here\./);
-  assert.equal(run(h, msg('s1')).stdout.includes('had 4 compactions'), true);
+test('first compaction: count is stored and the reminder to hand off new work (system#259)', () => {
+  const h = home(); const r = run(h, msg('s1')); assert.equal(r.status, 0);
+  assert.match(r.stdout, /^This session has had 1 compaction\. Finish the current task here\. Do not start new work here/);
+  assert.equal(fs.readFileSync(countFile(h, 's1'), 'utf8'), '1');
+  assert.equal(run(h, msg('s1')).stdout.includes('had 2 compactions'), true);
 });
 test('sessions are counted apart; unsafe characters are stripped from the file name', () => {
   const h = home(); run(h, msg('a/../b')); run(h, msg('c'));

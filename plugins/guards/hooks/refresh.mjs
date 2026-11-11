@@ -1,6 +1,6 @@
 // SessionStart (startup|resume): in a cloud session, pulls the public copy of the guards (/opt/guards, cloned by the
 // setup script of the environment) and installs it again, so a guard fix reaches the cloud at the next session start,
-// not after the environment cache expires (CCO review, 8 Nov 2026). On the Mac setup-pull.sh keeps the files current,
+// not after the environment cache expires (CCO review, 8 Nov 2026). On the Mac bin/checkout_sync.sh --hook keeps the files current,
 // but a new guard in hooks.json is not in the settings until install.mjs runs (system#169: merge-gate): when a hook of
 // hooks.json is missing from the settings, it installs again. Never blocks a session start.
 import { execFileSync } from 'node:child_process'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';

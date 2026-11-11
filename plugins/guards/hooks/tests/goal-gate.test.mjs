@@ -3,7 +3,7 @@ import test from 'node:test'; import assert from 'node:assert'; import fs from '
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'goal-gate.mjs');
-const full = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [ ] do x\n## Boss-only decision\n';
+const full = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDesign: mechanical: one line\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [ ] do x\n## Boss-only decision\n';
 // A transcript with `n` tool calls after the last message of Boss.
 function transcript(dir, n) {
   const lines = [JSON.stringify({ type: 'user', message: { content: 'do it' } })];
@@ -34,7 +34,7 @@ test('block: no goal file after the free calls', () => {
 test('block: a stale goal file', () => { const r = run({ goal: full, goalNewer: false }); assert.equal(r.status, 2); assert.match(r.stderr, /Boss sent a new message/); });
 test('block: an incomplete goal file names the missing keys', () => {
   const r = run({ goal: 'Said: fix x\nWants: x works\n' }); assert.equal(r.status, 2);
-  assert.match(r.stderr, /incomplete: Cause, Exists, Research, Done when, Proof, Boss acts, Steps/);
+  assert.match(r.stderr, /incomplete: Cause, Exists, Research, Design, Done when, Proof, Boss acts, Steps/);
 });
 test('Quick goal: passes up to 4 calls, blocks from the 5th', () => {
   assert.equal(run({ goal: 'Quick: answer\n', calls: 3 }).status, 0);

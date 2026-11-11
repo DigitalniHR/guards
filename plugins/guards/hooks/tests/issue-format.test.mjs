@@ -133,3 +133,41 @@ test('a here-doc body with quoted words and no Done when is still blocked', () =
   const cmd = 'gh issue create -R a/b --title t --body "$(cat <<\'EOF\'\nObjective: the API said "disabled".\nSteps: none\nEOF\n)"';
   const r = run('Bash', { command: cmd }); assert.equal(r.status, 2); assert.match(r.stderr, /Done when/);
 });
+
+// Boss, 11 Nov 2026 (CLAUDE.md, Only Boss decides): a public-content approval shows the full text or one approval page.
+const PC = 'Owner: Boss (public content)\nRecommendation: publish the new texts\nDefault: none, public text waits for Boss\n';
+const FULL = '\n## Full text\n\n### Item 1: homepage title\nCurrent: Personální agentura pro IT a digitál\nNew: Najdeme vám lidi do IT a digitálu do 30 dní\n';
+test('a public-content Decision with only a summary and links is blocked (dhr#893)', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: new texts', body: PC + 'Summary: 5 new titles, see https://github.com/DigitalniHR/dhr/issues/931#issuecomment-6762831255' });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Full text/);
+});
+test('a public-content Decision that names its piece file passes (studio content/README.md)', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: PC + 'Draft: `content/dhr/web/homepage-hero/7-FINAL.md`\n' });
+  assert.equal(r.status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: PC + 'Draft: see the chat\n' }).status, 2);
+});
+test('a public-content Decision whose Full text is only links is blocked', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: PC + '\n## Full text\n- https://github.com/a/b/issues/1#issuecomment-2\n- [preview](https://claude.ai/code/artifact/x)\n' });
+  assert.equal(r.status, 2);
+});
+test('a public-content Decision with the full text passes', () => {
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: PC + FULL }).status, 0);
+});
+test('a public-content Decision with an approval page passes', () => {
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: PC + 'Approval page: https://claude.ai/code/artifact/abc\n' }).status, 0);
+});
+test('an edit that sets Owner: Boss (public content) without the text is blocked', () => {
+  const r = run('Bash', { command: `gh issue edit 893 -R DigitalniHR/dhr --body "${PC.replace(/\n/g, '\\n')}Summary: new texts"` });
+  assert.equal(r.status, 2); assert.match(r.stderr, /public content/);
+  assert.equal(run('mcp__github__issue_write', { method: 'update', body: PC + 'Summary only' }).status, 2);
+});
+test('an edit with the full text, an edit without a body and another Boss class pass', () => {
+  assert.equal(run('mcp__github__issue_write', { method: 'update', body: PC + FULL }).status, 0);
+  assert.equal(run('Bash', { command: 'gh issue edit 893 --add-label status:review' }).status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: x', body: 'Owner: Boss (money)\nRecommendation: a\nDefault: a after 7 days' }).status, 0);
+});
+test('the CAO check mode prints missing or ok', () => {
+  const m = spawnSync('node', [hook, '--text-missing'], { input: PC + 'Summary only', encoding: 'utf8' });
+  assert.equal(m.status, 1); assert.equal(m.stdout.trim(), 'missing');
+  assert.equal(spawnSync('node', [hook, '--text-missing'], { input: PC + FULL, encoding: 'utf8' }).stdout.trim(), 'ok');
+});

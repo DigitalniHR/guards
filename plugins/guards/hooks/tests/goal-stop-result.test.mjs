@@ -3,7 +3,7 @@ import test from 'node:test'; import assert from 'node:assert'; import fs from '
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'goal-stop.mjs');
-const done = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [x] do x — test green\n## Boss-only decision\n';
+const done = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDesign: mechanical: one line\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [x] do x — test green\n## Boss-only decision\n';
 const open = done.replace('- [x] do x — test green', '- [ ] do x');
 function run({ goal = done, last = '' } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-stop-'));

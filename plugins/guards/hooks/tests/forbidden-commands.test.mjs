@@ -3,11 +3,16 @@ import test from 'node:test'; import assert from 'node:assert'; import fs from '
 import { spawnSync, execFileSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'forbidden-commands.mjs');
-function run(command, cwd) {
-  return spawnSync('node', [hook], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd }), encoding: 'utf8' });
+// A fake gh as in a cloud session (system#293): every call but `gh api` gets HTTP 403; `gh api <route>` logs the route
+// and prints $FAKE_PRS (the closed PRs of the branch on GitHub, REST shape), default none.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-'));
+const fakeGh = path.join(tmp, 'gh'); const ghLog = path.join(tmp, 'gh.log');
+fs.writeFileSync(fakeGh, `#!/bin/sh\n[ "$1" = api ] || { echo 'HTTP 403' >&2; exit 1; }\necho "$2" >> '${ghLog}'\nprintf "%s" "\${FAKE_PRS:-[]}"\n`); fs.chmodSync(fakeGh, 0o755);
+function run(command, cwd, prs) {
+  return spawnSync('node', [hook], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command }, cwd }), encoding: 'utf8',
+    env: { ...process.env, FORBIDDEN_GH: fakeGh, FAKE_PRS: prs ? JSON.stringify(prs) : '' } });
 }
 // A repository with origin/main, a branch merged into it and a branch with its own commit.
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-'));
 const bare = path.join(tmp, 'origin.git'); const repo = path.join(tmp, 'repo');
 const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', env });
@@ -80,4 +85,29 @@ test('merged branch plus redirect passes, unmerged plus redirect is blocked (sys
 test('outside a repository: a clear block, no hook error (system#151)', () => {
   const r = run(`${DEL} done`, outside);
   assert.equal(r.status, 2); assert.doesNotMatch(r.stderr, /hook error/); assert.match(r.stderr, /not a git repository/); assert.ok(r.stderr.includes(outside));
+});
+
+// system#291: a squash branch whose file main changed later conflicts in merge-tree; a merged PR on GitHub with
+// the same head as the local tip is the proof. A branch with no merged PR or with later work stays blocked.
+git('checkout', '-q', '-b', 'sq2'); fs.writeFileSync(path.join(repo, 'e.txt'), 'e1'); git('add', 'e.txt'); git('commit', '-q', '-m', 'e1');
+git('checkout', '-q', 'main'); git('checkout', '-q', 'sq2', '--', 'e.txt'); git('commit', '-q', '-m', 'squash of sq2');
+fs.writeFileSync(path.join(repo, 'e.txt'), 'e-later'); git('commit', '-q', '-am', 'later change of e'); git('push', '-q', 'origin', 'main');
+const sq2tip = git('rev-parse', 'sq2').trim();
+test('squash branch with a later change on main: blocked by git alone (system#291)', () => {
+  const r = run(`${DEL} sq2`, repo); assert.equal(r.status, 2); assert.match(r.stderr, /\(sq2\)/);
+});
+test('squash branch with a merged PR of the same head passes (system#291)', () => {
+  fs.rmSync(ghLog, { force: true });
+  assert.equal(run(`${DEL} sq2`, repo, [{ merged_at: null, head: { sha: 'f'.repeat(40) } }, { merged_at: '2026-11-10T22:00:00Z', head: { sha: sq2tip } }]).status, 0);
+  assert.match(fs.readFileSync(ghLog, 'utf8'), /^repos\/[^/]+\/origin\/pulls\?state=closed&per_page=100&head=[^&]+%3Asq2$/m);
+});
+test('a closed PR of the same head that is not merged stays blocked (system#293)', () => {
+  assert.equal(run(`${DEL} sq2`, repo, [{ merged_at: null, head: { sha: sq2tip } }]).status, 2);
+});
+test('a branch with no merged PR stays blocked (system#291)', () => {
+  assert.equal(run(`${DEL} wip`, repo, []).status, 2);
+});
+test('a branch with later work than its merged PR stays blocked (system#291)', () => {
+  git('checkout', '-q', 'sq2'); fs.writeFileSync(path.join(repo, 'e.txt'), 'e2'); git('commit', '-q', '-am', 'e2'); git('checkout', '-q', 'main');
+  const r = run(`${DEL} sq2`, repo, [{ merged_at: '2026-11-10T22:00:00Z', head: { sha: sq2tip } }]); assert.equal(r.status, 2); assert.match(r.stderr, /\(sq2\)/);
 });

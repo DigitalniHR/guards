@@ -43,6 +43,22 @@ try {
           unmerged = unmerged.filter((n) => !merged.includes(n) && !inMain(n));
         } catch { /* keep the local judgment */ }
       }
+      // A squash branch whose files main changed later conflicts in merge-tree (system#291: 18 studio branches).
+      // GitHub is the proof: a merged PR of that branch whose head is the local tip. Later work, no PR or an error blocks.
+      // The REST route, not `gh pr list` (GraphQL): the cloud sessions get 403 on GraphQL (system#293). The owner and the
+      // repository come from the origin URL (github.com, ssh or the cloud git proxy), not from a gh lookup.
+      const onGitHub = (n) => {
+        try {
+          const m = git('remote', 'get-url', 'origin').match(/([^/:]+)\/([^/]+?)(?:\.git)?\/?$/);
+          if (!m) return false;
+          const route = `repos/${m[1]}/${m[2]}/pulls?state=closed&per_page=100&head=${encodeURIComponent(`${m[1]}:${n}`)}`;
+          const prs = JSON.parse(execFileSync(process.env.FORBIDDEN_GH || 'gh', ['api', route],
+            { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 }));
+          const tip = git('rev-parse', `refs/heads/${n}`);
+          return Array.isArray(prs) && prs.some((p) => p.merged_at && p.head?.sha === tip);
+        } catch { return false; }
+      };
+      if (unmerged.length && !noRepo) unmerged = unmerged.filter((n) => !onGitHub(n));
       if (names.length && !unmerged.length) hit = undefined;
       else if (noRepo) hit = [hit[0], `git branch -D where the merge cannot be checked: ${cwd} is not a git repository with origin/main (${names.join(', ')})`, `run it in the repository (cd <repo> && ... or git -C <repo> ...)`];
       else if (unmerged.length) hit = [hit[0], `git branch -D of a branch not merged into origin/main (${unmerged.join(', ')})`, hit[2]];

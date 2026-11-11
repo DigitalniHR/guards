@@ -3,6 +3,7 @@
 // issue_write create when the body has no "Done when" line and no "Proof" line. Other commands pass untouched.
 // A comment, an edit or a decision issue is not a new piece of work and is not checked for Done when and Proof.
 // An issue with "Owner: Boss" needs Recommendation and Default (bossMissing).
+// An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -86,6 +87,30 @@ export function bossMissing(body) {
   return ['Recommendation', 'Default'].filter((k) => !new RegExp(`^\\W*${k}\\s*:\\s*\\S`, 'im').test(b));
 }
 
+// A public-content approval shows the full final text, not a summary or links (Boss, 11 Nov 2026; standard
+// studio content/README.md, Drafts and approval; dhr#893, #904, #758, #880, #473 named only a summary and links to comments and previews).
+export const TEXT_RULE = 'an issue with "Owner: Boss (public content)" shows the full final text of each item under a heading "## Full text" (current and new side by side where text is replaced), or names its piece file in a line "Draft: content/<brand>/<type>/<slug>/7-FINAL.md", or has one line "Approval page: <https link>" to the Boss page that shows all full texts and lets Boss edit them; a summary, the first lines or links to comments are not enough (rule: studio content/README.md, section "Drafts and approval")';
+export function textMissing(body) {
+  const b = String(body || '');
+  if (!/^\W*owner\s*:\s*boss\s*\(\s*public content\b/im.test(b)) return false;
+  if (/^\W*approval page\s*:\W*https?:\/\/\S+/im.test(b)) return false;
+  if (/^\W*draft\s*:\s*`?\S*content\/[\w.-]+\/[\w.-]+\/[\w.-]+\/\S*\.md\b/im.test(b)) return false;   // the piece file Boss opens on the Mac
+  const lines = b.split('\n');
+  const i = lines.findIndex((l) => /^\s*#{1,6}\s*full texts?\b/i.test(l));
+  if (i < 0) return true;
+  const level = lines[i].match(/#+/)[0].length;
+  const text = [];
+  for (const l of lines.slice(i + 1)) {
+    const h = l.match(/^\s*(#{1,6})\s/);
+    if (h && h[1].length <= level) break;
+    if (!h) text.push(l);
+  }
+  // Only the words of the text count: links, list marks and labels such as "Current:" are not the text.
+  const words = text.join(' ').replace(/\[([^\]]*)\]\([^)]*\)/g, ' ').replace(/https?:\/\/\S+/g, ' ')
+    .replace(/\b(?:current|new|now|before|after|item \d+)\s*:/gi, ' ').match(/\p{L}[\p{L}\p{N}'’-]*/gu) || [];
+  return words.length < 5;
+}
+
 // The body of a `gh issue create` command: --body-file/-F <path> is read, --body/-b "<text>" is taken as written.
 export function bodyOf(command, cwd) {
   // The flag stands alone (not the end of another word); ~ and $VAR / ${VAR} are taken from the environment (system#139).
@@ -108,6 +133,8 @@ export function bodyOf(command, cwd) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {   // run as a hook, not imported
+  // `node issue-format.mjs --text-missing < body`: the CAO owner check on an open issue; prints missing or ok, exit 1 or 0.
+  if (process.argv[2] === '--text-missing') { const m = textMissing(readFileSync(0, 'utf8')); console.log(m ? 'missing' : 'ok'); process.exit(m ? 1 : 0); }
   let input = {};
   try { input = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { process.exit(0); }
   const tool = String(input.tool_name || '');
@@ -118,14 +145,24 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       // Only a real call counts (8 Nov 2026): a here-doc body and text in quotes (a comment that names the command) are data.
       const { commandText } = await import('./forbidden-patterns.mjs');
       const bare = commandText(command).replace(/"(?:[^"\\]|\\.)*"|'[^']*'/gs, '""');
-      if (!/(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+create\b/.test(bare)) process.exit(0);
+      const create = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+create\b/.test(bare);
+      const edit = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+edit\b/.test(bare);
+      if (!create && !edit) process.exit(0);
       body = bodyOf(command, String(input.cwd || process.cwd()));
       if (body === null) process.exit(0);
+      if (edit && !create) {   // an edit that sets the body: only the public-content rule (an engineer sets Owner: Boss by an edit)
+        if (body && textMissing(body)) { console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and edit the issue again.`); process.exit(2); }
+        process.exit(0);
+      }
       const t = command.match(/(?:--title|-t)[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/);
       title = t ? (t[1] ?? t[2] ?? t[3]) : '';
       repo = repoOf(command, String(input.cwd || process.cwd()));
     } else if (/issue_write$/.test(tool)) {
-      if (String(input.tool_input?.method || '') !== 'create') process.exit(0);
+      const method = String(input.tool_input?.method || '');
+      if (method === 'update' && typeof input.tool_input?.body === 'string' && textMissing(input.tool_input.body)) {
+        console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and update the issue again.`); process.exit(2);
+      }
+      if (method !== 'create') process.exit(0);
       body = input.tool_input?.body;
       title = input.tool_input?.title;
       repo = input.tool_input?.owner && input.tool_input?.repo ? `${input.tool_input.owner}/${input.tool_input.repo}` : null;
@@ -137,6 +174,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     const boss = bossMissing(body);
     if (boss.length) {
       console.error(`Blocked: ${BOSS_RULE}. Missing: ${boss.join(', ')}. Add the lines and create the issue again; an access or a key is not a Boss class: Owner: Agent with the label blocked:access.`);
+      process.exit(2);
+    }
+    if (textMissing(body)) {
+      console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and create the issue again.`);
       process.exit(2);
     }
     if (/^\W*(\[[^\]]*\]\s*)?decision\b/i.test(String(title || ''))) process.exit(0);

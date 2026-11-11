@@ -24,9 +24,9 @@ export function isAutomated(promptText) { return /^\s*(Base directory for this s
 
 // The goal file: a `Quick:` line for a question or a handful of tool calls, else the full form.
 export function parseGoal(text) {
-  const g = { quick: /^\s*Quick:/m.test(text), missing: {} , open: [], decision: '' };
+  const g = { quick: /^\s*Quick:/m.test(text), missing: {} , open: [], waiting: [], decision: '' };
   if (g.quick) return g;
-  for (const key of ['Said', 'Wants', 'Cause', 'Exists', 'Research', 'Done when', 'Proof', 'Boss acts']) {
+  for (const key of ['Said', 'Wants', 'Cause', 'Exists', 'Research', 'Design', 'Done when', 'Proof', 'Boss acts']) {
     // "Done when (all true):" with a numbered list under it is the form of standards/evals.md (8 Nov 2026).
     const m = text.match(new RegExp(`^${key}(?:\\s*\\([^)]*\\))?:[ \\t]*(.*)((?:\\n[ \\t]*(?:\\d+[.)]|[-*])[ \\t]+\\S.*)*)`, 'm'));
     const val = m ? `${m[1]} ${m[2].replace(/\s+/g, ' ')}`.trim() : '';
@@ -41,11 +41,34 @@ export function parseGoal(text) {
   if (g.Exists && !/^none found:\s*\S/i.test(g.Exists) && !/(https?:\/\/|[\w-]\/[\w.-]|\.(md|py|sh|mjs|js|json|ya?ml)\b|#\d+|\b(skill|worker|routine|hook|script|issue|standard)\b)/i.test(g.Exists)) g.missing.Exists = 'name the skills, workers, scripts, standards or issues read for this class, or "none found: <the search>"';
   if (g.Research && !/^mechanical:\s*\S/i.test(g.Research) && !/(https?:\/\/|\.md\b|standard)/i.test(g.Research)) g.missing.Research = 'name the standard file or the sources read, or "mechanical: <why no research>"';
   g.open = [...text.matchAll(/^- \[ \] (.+)$/gm)].map(m => m[1].trim());
-  const steps = [...text.matchAll(/^- \[[ x]\] /gm)].length;
+  // A step that waits for sessions this one started: "- [~] <step> — waits for local_<id>[, local_<id>]" (system#302).
+  g.waiting = [...text.matchAll(/^- \[~\] (.+)$/gm)].map(m => ({ step: m[1].trim(), sessions: [...m[1].matchAll(/\blocal_[0-9a-f-]{4,}/gi)].map(x => x[0].toLowerCase()) }));
+  const steps = [...text.matchAll(/^- \[[ x~]\] /gm)].length;
   if (!steps) g.missing.Steps = true;
   const d = text.match(/^## Boss-only decision\s*\n([\s\S]*?)(?:\n## |\s*$)/m);
   g.decision = d ? d[1].trim() : '';
   return g;
+}
+// A session of the desktop app works while it is not archived and its last answer has no post-turn summary yet (the
+// app writes the summary when a turn ends). A session the app does not know counts as ended (system#302).
+export const SESSIONS_DIR = process.env.GOAL_SESSIONS_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
+export const WAIT_MAX_MS = 2 * 3600 * 1000; // no activity for this long: the turn ended without a summary
+export function sessionRunning(id, dir = SESSIONS_DIR) {
+  const want = String(id).toLowerCase();
+  let accounts = []; try { accounts = fs.readdirSync(dir).filter(a => !a.startsWith('deleted_')); } catch { return false; }
+  for (const a of accounts) {
+    let orgs = []; try { orgs = fs.readdirSync(path.join(dir, a)); } catch { continue; }
+    for (const o of orgs) {
+      let names = []; try { names = fs.readdirSync(path.join(dir, a, o)); } catch { continue; }
+      const name = names.find(n => n.startsWith(want) && n.endsWith('.json'));
+      if (!name) continue;
+      let d; try { d = JSON.parse(fs.readFileSync(path.join(dir, a, o, name), 'utf8')); } catch { return false; }
+      if (d.isArchived) return false;
+      if (d.lastAssistantUuid && d.postTurnSummaryFor === d.lastAssistantUuid) return false;
+      return Date.now() - Number(d.lastActivityAt || 0) < WAIT_MAX_MS;
+    }
+  }
+  return false;
 }
 export function goalState(f) {
   const text = read(f.goal);
@@ -70,13 +93,14 @@ export const FORMAT = `Goal file format (Markdown, English, STE):
 Said: <what Boss wrote, one line>
 Wants: <the intent behind it: the higher goal, what he will do with the result; never the same as Said>
 Cause: class: <the class of problem this case is a sign of>; case: <this case>. The fix solves the class, never a rule for one case
-Exists: <what already exists for this class and was read: skills, workers, scripts, standards, issues; or "none found: <the search>">
+Exists: <what already exists for this class and was read: skills, workers, scripts, standards, issues, and why it fails the need now; or "none found: <the search>">
 Research: <the standard file read or written, or the sources of best practice read before the solution; or "mechanical: <why no research>">
+Design: <the one design you build: the fewest new parts (files, jobs, checks, criteria) that meet the need at the moment of use; a repair of what exists before a second mechanism; one or two other designs in a few words each and why not; or "mechanical: <why>">
 Done when: <3 to 8 criteria, each true or false and checkable now, as Boss sees it; then "Not done when:" the likely half-done state (standards/evals.md)>
 Proof: <the check that shows the end state: a test, a listing, a page opened, a count before and after>
 Boss acts: none | <every click, permission or approval Boss must do, in one list, with the minutes, asked once>
 ## Steps
-- [ ] <step> (mark done as "- [x] <step> — <proof>")
+- [ ] <step> (mark done as "- [x] <step> — <proof>"; a step that waits for a session you started: "- [~] <step> — waits for local_<id>")
 ## Boss-only decision
 <empty, or the one decision (money, data loss, public content, his accounts, direction) that blocks the end state>
 A question or a turn of at most ${QUICK_CALLS} tool calls needs only one line: "Quick: <what>".`;
