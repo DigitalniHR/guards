@@ -24,7 +24,14 @@ test('Research without a source or a mechanical reason is refused', () => {
   const r = run(full.replace('Research: dhr/2_content/newsletter-funnel-standard.md', 'Research: I know how'));
   assert.equal(r.status, 2); assert.match(r.stderr, /Research \(name the standard/);
 });
-test('a mechanical Research line passes', () => { assert.equal(run(full.replace('Research: dhr/2_content/newsletter-funnel-standard.md', 'Research: mechanical: rename a file')).status, 0); });
+test('Research that names a source in words passes; a promise to read later is refused (system#397)', () => {
+  const line = 'Research: dhr/2_content/newsletter-funnel-standard.md';
+  for (const ok of ['Google Search Central sitemaps docs (lastmod use), sitemaps.org protocol', 'skill wordpress-web-operations (Sestria profile)', 'GitHub CLI manual, gh issue create --label', 'the measured table in issue #498'])
+    assert.equal(run(full.replace(line, `Research: ${ok}`)).status, 0, ok);
+  for (const bad of ['to be filled after reading the routine', 'to fill after reading the audit code and the docs'])
+    assert.equal(run(full.replace(line, `Research: ${bad}`)).status, 2, bad);
+});
+test('a mechanical Research line passes',() => { assert.equal(run(full.replace('Research: dhr/2_content/newsletter-funnel-standard.md', 'Research: mechanical: rename a file')).status, 0); });
 test('a Cause that repeats Said is refused', () => {
   const r = run(full.replace('Cause: class y', 'Cause: fix x'));
   assert.equal(r.status, 2); assert.match(r.stderr, /Cause \(same as Said/);

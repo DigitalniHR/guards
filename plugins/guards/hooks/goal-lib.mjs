@@ -39,7 +39,9 @@ export function parseGoal(text) {
   else if (g.Cause && !/\bclass\b/i.test(g.Cause)) g.missing.Cause = 'a case only: write "class: <the class of problem>; case: <this case>"';
   // What exists before what is built: a new worker or rule beside an old one was the other half of the 6 (system#228).
   if (g.Exists && !/^none found:\s*\S/i.test(g.Exists) && !/(https?:\/\/|[\w-]\/[\w.-]|\.(md|py|sh|mjs|js|json|ya?ml)\b|#\d+|\b(skill|worker|routine|hook|script|issue|standard)\b)/i.test(g.Exists)) g.missing.Exists = 'name the skills, workers, scripts, standards or issues read for this class, or "none found: <the search>"';
-  if (g.Research && !/^mechanical:\s*\S/i.test(g.Research) && !/(https?:\/\/|\.md\b|standard)/i.test(g.Research)) g.missing.Research = 'name the standard file or the sources read, or "mechanical: <why no research>"';
+  // A source named in words (documentation, a skill, a guide, an issue) is a source: 19 of 23 refusals in 24 h named
+  // one; a line that only promises to read later is not (system#397).
+  if (g.Research && !/^mechanical:\s*\S/i.test(g.Research) && (/^to (be )?fill/i.test(g.Research) || !/(https?:\/\/|\.md\b|standard|#\d+|\b(docs?|documentation|manual|guide|reference|book|paper|skill|issue|sourced?|sources|readme)\b)/i.test(g.Research))) g.missing.Research = 'name the standard file or the sources read, or "mechanical: <why no research>"';
   g.open = [...text.matchAll(/^- \[ \] (.+)$/gm)].map(m => m[1].trim());
   // A step that waits for sessions this one started: "- [~] <step> — waits for local_<id>[, local_<id>]" (system#302).
   g.waiting = [...text.matchAll(/^- \[~\] (.+)$/gm)].map(m => ({ step: m[1].trim(), sessions: [...m[1].matchAll(/\blocal_[0-9a-f-]{4,}/gi)].map(x => x[0].toLowerCase()) }));
