@@ -95,7 +95,7 @@ Wants: <the intent behind it: the higher goal, what he will do with the result; 
 Cause: class: <the class of problem this case is a sign of>; case: <this case>. The fix solves the class, never a rule for one case
 Exists: <what already exists for this class and was read: skills, workers, scripts, standards, issues, and why it fails the need now; or "none found: <the search>">
 Research: <the standard file read or written, or the sources of best practice read before the solution; or "mechanical: <why no research>">
-Design: <the one design you build: the fewest new parts (files, jobs, checks, criteria) that meet the need at the moment of use; a repair of what exists before a second mechanism; one or two other designs in a few words each and why not; or "mechanical: <why>">
+Design: <the one design you build: the fewest new parts (files, jobs, checks, criteria) that meet the need at the moment of use; a repair of what exists before a second mechanism; one or two other designs in a few words each and why not; a task that pays for model calls above 2 USD names the amount and why here (standards/model-choice.md); or "mechanical: <why>">
 Done when: <3 to 8 criteria, each true or false and checkable now, as Boss sees it; then "Not done when:" the likely half-done state (standards/evals.md)>
 Proof: <the check that shows the end state: a test, a listing, a page opened, a count before and after>
 Boss acts: none | <every click, permission or approval Boss must do, in one list, with the minutes, asked once>
