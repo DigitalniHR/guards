@@ -35,7 +35,7 @@ export function blockReason(seen, next, now = Date.now()) {
   return null;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   let input = {};
   try { input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { process.exit(0); }
   const tool = String(input.tool_name || ''); const ti = input.tool_input || {};

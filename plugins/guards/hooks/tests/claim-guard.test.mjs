@@ -50,3 +50,10 @@ test('other tools and writes without labels pass', () => {
   assert.equal(run('PreToolUse', 'mcp__github__issue_write', { method: 'update', ...where, body: 'x' }).status, 0);
   assert.equal(run('PreToolUse', 'mcp__github__issue_write', { method: 'create', owner: 'a', repo: 'b', labels: ['x'] }).status, 0);
 });
+
+test('the hook runs when its path goes through a symlink (macOS /var is /private/var)', () => {
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cg-link-')), 'claim-guard.mjs');
+  fs.symlinkSync(hook, link);
+  const r = spawnSync('node', [link], { input: JSON.stringify({ session_id: 's2', hook_event_name: 'PreToolUse', tool_name: 'mcp__github__issue_write', tool_input: { method: 'update', ...where, labels: ['x'] } }), encoding: 'utf8', env: { ...process.env, CLAIM_GUARD_DIR: tmp } });
+  assert.equal(r.status, 2);
+});
