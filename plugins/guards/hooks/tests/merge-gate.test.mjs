@@ -1,16 +1,17 @@
 // node --test hooks/tests/merge-gate.test.mjs  (system#169)
 import test from 'node:test'; import assert from 'node:assert'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
-import { merges, verdict, bucketOf } from '../merge-gate.mjs';
+import { merges, verdict, bucketOf, freshFor, FRESH_MS } from '../merge-gate.mjs';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'merge-gate.mjs');
-// A fake gh: prints $FAKE_CHECKS and exits $FAKE_EXIT; FAKE_ERR goes to stderr.
+// A fake gh: `pr view` prints $FAKE_PR; every other call prints $FAKE_CHECKS and exits $FAKE_EXIT; FAKE_ERR goes to stderr.
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mg-'));
 const fake = path.join(tmp, 'gh');
-fs.writeFileSync(fake, '#!/bin/sh\nprintf "%s" "$FAKE_CHECKS"; [ -n "$FAKE_ERR" ] && printf "%s" "$FAKE_ERR" >&2; exit "${FAKE_EXIT:-0}"\n'); fs.chmodSync(fake, 0o755);
-function run(input, checks, exit = 0, err = '') {
+fs.writeFileSync(fake, '#!/bin/sh\nif [ "$2" = view ]; then printf "%s" "$FAKE_PR"; exit 0; fi\nprintf "%s" "$FAKE_CHECKS"; [ -n "$FAKE_ERR" ] && printf "%s" "$FAKE_ERR" >&2; exit "${FAKE_EXIT:-0}"\n'); fs.chmodSync(fake, 0o755);
+const OLD_PR = JSON.stringify({ createdAt: '2026-01-01T00:00:00Z', commits: [{ committedDate: '2026-01-01T00:00:00Z' }] });
+function run(input, checks, exit = 0, err = '', pr = OLD_PR) {
   return spawnSync('node', [hook], { input: JSON.stringify({ cwd: tmp, ...input }), encoding: 'utf8',
-    env: { ...process.env, MERGE_GATE_GH: fake, FAKE_CHECKS: checks, FAKE_EXIT: String(exit), FAKE_ERR: err } });
+    env: { ...process.env, MERGE_GATE_GH: fake, FAKE_CHECKS: checks, FAKE_EXIT: String(exit), FAKE_ERR: err, FAKE_PR: pr } });
 }
 const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
 const RED = JSON.stringify([{ name: 'cause-and-research', bucket: 'fail' }, { name: 'tests', bucket: 'pass' }]);
@@ -36,6 +37,21 @@ test('a merge with a red check is blocked and the check is named', () => {
 test('a merge with a running check is blocked', () => { assert.equal(run(bash('gh pr merge 5 --squash'), RUNNING, 8).status, 2); });
 test('a merge with green checks passes', () => { assert.equal(run(bash('gh pr merge 5 --squash'), GREEN).status, 0); });
 test('a PR with no checks passes', () => { assert.equal(run(bash('gh pr merge 5'), '', 1, 'no checks reported on the branch').status, 0); });
+test('freshFor: the wait left after the last of open and push', () => {
+  const now = Date.parse('2026-11-12T05:47:36Z');
+  assert.equal(freshFor(['2026-11-12T05:47:30Z', '2026-11-12T05:47:26Z'], now), FRESH_MS - 6000);
+  assert.equal(freshFor(['2026-11-12T05:00:00Z'], now), 0);
+  assert.equal(freshFor([undefined, null], now), 0);
+});
+test('a PR with no checks, opened seconds ago, is blocked (studio#500)', () => {
+  const pr = JSON.stringify({ createdAt: new Date(Date.now() - 6000).toISOString(), commits: [] });
+  const r = run(bash('gh pr merge 500 -R DigitalniHR/studio --squash'), '', 1, 'no checks reported on the branch', pr);
+  assert.equal(r.status, 2); assert.match(r.stderr, /DigitalniHR\/studio#500 has no checks yet/);
+});
+test('an old PR with a commit pushed seconds ago and no checks is blocked', () => {
+  const pr = JSON.stringify({ createdAt: '2026-01-01T00:00:00Z', commits: [{ committedDate: new Date(Date.now() - 20000).toISOString() }] });
+  assert.equal(run(bash('gh pr merge 5'), '', 1, 'no checks reported on the branch', pr).status, 2);
+});
 test('a gh error blocks (fail closed)', () => { assert.equal(run(bash('gh pr merge 5'), '', 1, 'HTTP 502').status, 2); });
 test('a command with no merge passes without gh', () => { assert.equal(run(bash('git status'), '', 1, 'HTTP 502').status, 0); });
 test('a merge named inside a here-doc is data', () => {
