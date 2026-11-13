@@ -190,15 +190,49 @@ export function textMissing(body) {
   return words.length < 5;
 }
 
+const expand = p => String(p).replace(/^~(?=\/)/, process.env.HOME || '~').replace(/\$\{?(\w+)\}?/g, (m, v) => process.env[v] ?? m);
+// The text a command writes to the body file with a here-doc (`cat > <path> <<'EOF' ... EOF` or `cat <<'EOF' > <path>`),
+// or null. The guard runs before the command, so the file is not on the disk yet, or holds an older text: in 24 h
+// 12 of 30 refusals were complete issues judged as an empty body (system#469). The last here-doc of the path counts;
+// the path matches when it is the same or one is the tail of the other (a `cd` before the call).
+export function writtenInCommand(command, p) {
+  const quoted = `(?:"([^"]+)"|'([^']+)'|([^\\s<>;&|]+))`;
+  const forms = [
+    new RegExp(`\\bcat\\s*>\\s*${quoted}\\s*<<-?\\s*(['"]?)(\\w+)\\4[ \\t]*\\n([\\s\\S]*?)\\n[ \\t]*\\5(?=[ \\t]*(?:\\n|$))`, 'g'),
+    new RegExp(`\\bcat\\s*<<-?\\s*(['"]?)(\\w+)\\1\\s*>\\s*${quoted}[ \\t]*\\n([\\s\\S]*?)\\n[ \\t]*\\2(?=[ \\t]*(?:\\n|$))`, 'g'),
+  ];
+  const same = (a, b) => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+  let found = null, at = -1;
+  for (const [i, re] of forms.entries()) {
+    for (const m of command.matchAll(re)) {
+      const target = expand(i === 0 ? (m[1] || m[2] || m[3]) : (m[3] || m[4] || m[5]));
+      if (same(target, p) && m.index > at) { found = m[6]; at = m.index; }
+    }
+  }
+  return found;
+}
+
 // The body of a `gh issue create` command: --body-file/-F <path> is read, --body/-b "<text>" is taken as written.
 export function bodyOf(command, cwd) {
   // The flag stands alone (not the end of another word); ~ and $VAR / ${VAR} are taken from the environment (system#139).
-  const file = command.match(/(?<![\w-])(?:--body-file|-F)[ =](?:"([^"]+)"|'([^']+)'|(\S+))/);
+  const file = command.match(/(?<![\w-])(?:--body-file|-F)[ =](?:"([^"]+)"|'([^']+)'|([^\s;&|)]+))/);   // a path ends at ; & | ) (system#469)
   if (file) {
     let p = file[1] || file[2] || file[3];
     if (p === '-') return null;              // stdin: cannot be read here
-    p = p.replace(/^~(?=\/)/, process.env.HOME || '~').replace(/\$\{?(\w+)\}?/g, (m, v) => process.env[v] ?? m);
+    p = expand(p);
     if (p.includes('$')) return null;        // a shell variable the guard cannot see: do not block on a guess
+    const written = writtenInCommand(command, p);
+    if (written !== null) return written;
+    const full = path.isAbsolute(p) ? p : path.join(cwd, p);
+    return existsSync(full) ? readFileSync(full, 'utf8') : '';
+  }
+  // --body "$(cat <path>)": the same file rule (system#469).
+  const viaCat = command.match(/(?<![\w-])(?:--body|-b)[ =]"\$\(\s*cat\s+(?:"([^"]+)"|'([^']+)'|([^\s)<]+))\s*\)"/);
+  if (viaCat) {
+    const p = expand(viaCat[1] || viaCat[2] || viaCat[3]);
+    if (p.includes('$')) return null;
+    const written = writtenInCommand(command, p);
+    if (written !== null) return written;
     const full = path.isAbsolute(p) ? p : path.join(cwd, p);
     return existsSync(full) ? readFileSync(full, 'utf8') : '';
   }

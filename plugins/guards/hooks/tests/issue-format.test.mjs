@@ -248,3 +248,29 @@ test('the check mode for an open Boss issue prints the reasons or ok', () => {
   assert.equal(bad.status, 1); assert.match(bad.stdout, /What happens/);
   assert.equal(spawnSync('node', [hook, '--boss-missing'], { input: BLOCK + 'Owner: Boss (money)\nDefault: x\n', encoding: 'utf8' }).stdout.trim(), 'ok');
 });
+
+// The body file is written by the same command: the guard reads the here-doc, not the disk (system#469).
+const T = '--title "The page shows the new number"';
+test('a complete body written by a here-doc in the same command passes', () => {
+  assert.equal(run('Bash', { command: `cat > /tmp/if-none/new.md <<'EOF'\n${good}EOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/new.md` }).status, 0);
+});
+test('a here-doc with a quoted path and a cd before the call passes', () => {
+  assert.equal(run('Bash', { command: `cd /tmp/if-none && cat > "/tmp/if-none/i 1.md" <<EOF\n${good}EOF\ngh issue create -R a/b ${T} --body-file "i 1.md" | tail -1` }).status, 0);
+});
+test('cat <<EOF > path and --body "$(cat path)" pass', () => {
+  assert.equal(run('Bash', { command: `cat <<'E' > /tmp/if-none/b.md\n${good}E\ngh issue create -R a/b ${T} --body "$(cat /tmp/if-none/b.md)"` }).status, 0);
+});
+test('an incomplete body written in the same command is blocked', () => {
+  const r = run('Bash', { command: `cat > /tmp/if-none/new.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/new.md` });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Done when, Proof/);
+});
+test('the here-doc wins over an older file on the disk', () => {
+  const r = run('Bash', { command: `cat > good.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file good.md` });
+  assert.equal(r.status, 2);
+});
+test('a body file that does not exist and is not written is blocked', () => {
+  assert.equal(run('Bash', { command: `cat > /tmp/if-none/other.md <<'EOF'\n${good}EOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/absent.md` }).status, 2);
+});
+test('a body file path followed by ; is read without the ;', () => {
+  assert.equal(run('Bash', { command: `gh issue create -R a/b ${T} --body-file good.md; echo done` }).status, 0);
+});
