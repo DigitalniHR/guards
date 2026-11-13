@@ -61,8 +61,7 @@ export function repoOf(command, cwd) {
 // The lite form of every issue (Boss approved it on 13 Nov 2026, system#479; standards/evals.md): What and why, Done
 // when with the proof in each line, Owner; an issue where Boss decides also has Boss decides, Options, Recommendation.
 export const TEMPLATE = '**What and why:** <1 to 3 sentences in business words; each internal term with its meaning>\n\n**Done when:**\n1. <a result Boss or a customer sees, true or false>. Proof: <the check, and where to open it>.\n(1 to 5 lines)\n\n**Owner:** <who acts next and the first act: "Agent: the engineer of this repository takes it and first ..." or "Boss (<class>): he answers on this page with a thumbs-up or the number of an option">\n\n## Details (for agents)\n<optional: steps, links, times, markers>';
-export const RULE = 'a new issue has the lite form: "What and why:" opens it (1 to 3 sentences in business words), "Done when:" is a list of 1 to 5 results, each true or false, checkable when the work ends (no time window such as "for two weeks"), in Boss words (no code, file or "merged/PR/tests" words) and each with its check after "Proof:" in the same line, and "Owner:" names who acts next and the first act; the part above the first heading is short (about 150 words, 300 where Boss decides), all other detail goes under "## Details (for agents)" (template and examples: system standards/evals.md)';
-const TOP_MAX = 200, TOP_MAX_BOSS = 400;   // words above the first heading: about 150 and about 300 in the standard, with a margin
+export const RULE = 'a new issue has the lite form: "What and why:" opens it (1 to 3 sentences in business words), "Done when:" is a list of 1 to 5 results, each true or false, checkable when the work ends (no time window such as "for two weeks"), in Boss words (no code, file or "merged/PR/tests" words) and each with its check after "Proof:" in the same line, and "Owner:" names who acts next and the first act; detail only an agent needs goes under "## Details (for agents)" (template and examples: system standards/evals.md)';
 
 // The Done when section: its first line and the lines under it, to a heading or the next key line ("Owner:", ...).
 // Blank lines right after the heading are skipped; a blank line after text ends the section.
@@ -121,7 +120,6 @@ function part(lines, key) {
   return { first: lines[i].replace(new RegExp(`^\\W*${key}\\s*:\\W*`, 'i'), '').trim(), rest };
 }
 const textOf = (p) => (p ? [p.first, ...p.rest].join(' ').trim() : '');
-const wordCount = (text) => (String(text).replace(/<!--[\s\S]*?-->/g, ' ').replace(/https?:\/\/\S+/g, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}'’.,%-]*/gu) || []).length;
 
 // Reasons a body fails the lite form; an empty list passes. `boss` is true when the label, not the body, names Boss.
 export function missing(body, boss = false) {
@@ -141,10 +139,6 @@ export function missing(body, boss = false) {
     for (const [re, what] of TECH) if (re.test(seen)) { out.push(`Done when at Boss level (it has ${what}: "${seen.match(re)[0]}"; the technical check goes after "Proof:")`); break; }
   }
   if (!/^\W*owner\s*:\W*\S/im.test(b)) out.push('Owner');
-  const head = lines.findIndex((l) => /^\s*#{1,6}\s/.test(l));
-  const top = wordCount((head < 0 ? lines : lines.slice(0, head)).join(' '));
-  const max = boss || bossOwned(b) ? TOP_MAX_BOSS : TOP_MAX;
-  if (top > max) out.push(`a short part above the first heading (it has ${top} words, the limit is ${max}): move the detail under "## Details (for agents)"`);
   return out;
 }
 

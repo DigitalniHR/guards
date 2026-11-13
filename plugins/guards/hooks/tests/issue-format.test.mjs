@@ -130,19 +130,9 @@ test('names of system parts in Done when pass (system#138); output words stay bl
   assert.equal(create(lite(doneOf('PR merged. Proof: CI.', 'tests pass. Proof: CI.', 'commit made. Proof: log.'))).status, 2);
 });
 
-// The length of the part above the first heading.
-const filler = (n) => Array.from({ length: n }, () => 'word').join(' ');
-test('a top part over the word limit is blocked; the same text under Details passes', () => {
-  const long = `**What and why:** The page shows an old number. ${filler(210)}\n\n${DONE}\n\n${AGENT}\n`;
-  const r = create(long);
-  assert.equal(r.status, 2); assert.match(r.stderr, /a short part above the first heading/);
-  assert.equal(create(`${WHY}\n\n${DONE}\n\n${AGENT}\n\n## Details (for agents)\n${filler(400)}\n`).status, 0);
-});
-test('a Boss issue may have a longer top part (300 words) than an agent issue (150)', () => {
-  const body = (owner) => `**What and why:** The page shows an old number. ${filler(250)}\n\n${DONE}\n\n${owner}\n`;
-  assert.match(missing(body(AGENT)).join(), /a short part above the first heading/);
-  assert.deepEqual(missing(body(BOSS_OWNER)), []);
-  assert.deepEqual(missing(body(AGENT), true), []);   // the label names Boss
+// No word cap: context may be long (Boss, 13 Nov 2026: "Zruš pravidlo na počet slov, zbytečný").
+test('a long top part passes', () => {
+  assert.equal(create(`**What and why:** The page shows an old number. ${Array.from({ length: 500 }, () => 'word').join(' ')}\n\n${DONE}\n\n${AGENT}\n`).status, 0);
 });
 
 test('a comment whose text names the create command passes', () => {
