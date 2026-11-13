@@ -2,7 +2,7 @@
 // issues had a "Done when" line; work was closed half done). Blocks (exit 2) `gh issue create` and the GitHub MCP
 // issue_write create when the body has no "Done when" line and no "Proof" line. Other commands pass untouched.
 // A comment, an edit or a decision issue is not a new piece of work and is not checked for Done when and Proof.
-// An issue with "Owner: Boss" needs Recommendation and Default (bossMissing).
+// An issue with "Owner: Boss" opens with the block for Boss (What happens, Boss decides, Options, Recommendation) and has Default (bossMissing).
 // An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
 // The title of a new or renamed issue is a plain sentence, and for a Boss issue it names his act (titleUnclear).
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
@@ -111,13 +111,59 @@ export function missing(body) {
   return out;
 }
 
-// A Boss issue (a line "Owner: Boss", also a Decision) needs a "Recommendation:" and a "Default:" line, so the
-// night can apply the Default after 7 days (system#59; dhr#761: dhr#755 was made with Owner: Boss and no Default).
-export const BOSS_RULE = 'a new issue with "Owner: Boss" needs a line "Recommendation:" (one line, the answer you advise) and a line "Default:" (what happens when Boss does not answer in 7 days)';
-export function bossMissing(body) {
+// A Boss issue (a line "Owner: Boss", also a Decision) opens with a short block for Boss and has a "Default:" line, so
+// the night can apply the Default after 7 days (system#59; dhr#761: dhr#755 was made with Owner: Boss and no Default).
+// The block (Boss, 13 Nov 2026, on dhr#34: "I do not understand it at all"; system#463; standards/evals.md rule 9):
+// What happens, Boss decides, Options (2 or 3), Recommendation (one concrete answer, never the choice again).
+export const BOSS_RULE = 'a new issue with "Owner: Boss" opens with a short block for Boss in plain business words: "What happens:" (1 to 3 sentences, each internal term with its meaning), "Boss decides:" (the one question), "Options:" (a list of 2 or 3, each with what it causes), "Recommendation:" (ONE concrete answer first, with its value, then the reason: "Option 2: add 100 USD, because ..."; never "decide A or B" or "set X"), and it has a line "Default:" (what happens when Boss does not answer in 7 days); form and example: system standards/evals.md rule 9';
+const BLOCK_KEYS = ['What happens', 'Boss decides', 'Options', 'Recommendation'];
+const KEY_LINE = /^\W*(what happens|boss decides|options|recommendation|default|owner)\s*:/i;
+// The text of a key line of the block: the rest of its line and the lines under it, to the next key line, a heading or a blank line.
+function blockPart(lines, key) {
+  const i = lines.findIndex((l) => new RegExp(`^\\W*${key}\\s*:`, 'i').test(l));
+  if (i < 0) return null;
+  const rest = [];
+  for (const l of lines.slice(i + 1)) {
+    if (!l.trim()) { if (rest.length || key !== 'Options') break; else continue; }
+    if (/^\s*#/.test(l) || KEY_LINE.test(l)) break;
+    rest.push(l);
+  }
+  return { first: lines[i].replace(new RegExp(`^\\W*${key}\\s*:\\W*`, 'i'), '').trim(), rest };
+}
+// A recommendation that hands the choice back to Boss: its first clause (to the first ".", ":", ";", "(" or "because")
+// offers two things ("A or B"), starts with a word of choice, or says "set X" with no value.
+export function recommendationVague(text) {
+  const clause = String(text || '').replace(/[*_`]/g, '').trim().split(/\.\s|[:;(]|\bbecause\b/i)[0].trim();
+  if (/^(?:boss\s+)?(?:decides?|chooses?|picks?|selects?|either|whether|confirm whether)\b/i.test(clause)) return `it starts with a word of choice: "${clause}"`;
+  if (/\bor\b/i.test(clause)) return `it offers a choice: "${clause}"`;
+  if (/^(?:boss\s+)?(?:sets?|defines?|determines?)\b/i.test(clause) && !/\d/.test(clause)) return `it names no value: "${clause}"`;
+  return '';
+}
+// Reasons a Boss issue fails the rule; an empty list passes. `boss` is true when the label, not the body, names Boss.
+export function bossMissing(body, boss = false) {
   const b = String(body || '');
-  if (!/^\W*owner\s*:\s*boss\b/im.test(b)) return [];
-  return ['Recommendation', 'Default'].filter((k) => !new RegExp(`^\\W*${k}\\s*:\\s*\\S`, 'im').test(b));
+  if (!boss && !/^\W*owner\s*:\s*boss\b/im.test(b)) return [];
+  const lines = b.split('\n');
+  const out = [];
+  const parts = Object.fromEntries(BLOCK_KEYS.map((k) => [k, blockPart(lines, k)]));
+  for (const k of BLOCK_KEYS) if (!parts[k] || !(parts[k].first || parts[k].rest.length)) out.push(k);
+  if (!/^\W*default\s*:\s*\S/im.test(b)) out.push('Default');
+  if (parts['What happens'] && !/^\W*what happens\s*:/i.test(lines.find((l) => l.trim()) || '')) out.push('the block as the first lines of the issue ("What happens:" opens it)');
+  if (parts.Options && (parts.Options.first || parts.Options.rest.length)) {
+    const n = parts.Options.rest.filter((l) => /^\s*(?:\d+[.)]|[-*]|[A-C][.)])\s+\S/.test(l)).length;
+    if (n < 2 || n > 3) out.push(`Options as a list of 2 or 3 (it has ${n})`);
+  }
+  const rec = parts.Recommendation;
+  if (rec && rec.first) {
+    const vague = recommendationVague(rec.first);
+    if (vague) out.push(`Recommendation as one concrete answer (${vague})`);
+  }
+  for (const k of ['What happens', 'Boss decides', 'Recommendation']) {
+    const text = parts[k] ? [parts[k].first, ...parts[k].rest].join(' ') : '';
+    const hit = TITLE_TECH.slice(0, 2).find(([re]) => re.test(text));
+    if (hit) { out.push(`plain words in "${k}:" (it has ${hit[1]}: "${text.match(hit[0])[0]}")`); break; }
+  }
+  return out;
 }
 
 // A public-content approval shows the full final text, not a summary or links (Boss, 11 Nov 2026; standard
@@ -168,6 +214,8 @@ export function bodyOf(command, cwd) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {   // run as a hook, not imported
   // `node issue-format.mjs --text-missing < body`: the CAO owner check on an open issue; prints missing or ok, exit 1 or 0.
   if (process.argv[2] === '--text-missing') { const m = textMissing(readFileSync(0, 'utf8')); console.log(m ? 'missing' : 'ok'); process.exit(m ? 1 : 0); }
+  // `node issue-format.mjs --boss-missing < body`: the same check on an open Boss issue; prints the reasons or ok, exit 1 or 0.
+  if (process.argv[2] === '--boss-missing') { const m = bossMissing(readFileSync(0, 'utf8'), true); console.log(m.length ? m.join(', ') : 'ok'); process.exit(m.length ? 1 : 0); }
   // `node issue-format.mjs --title-unclear [--boss] "<title>"`: the title check for a script that opens issues (its test
   // runs it on each title template); prints the reasons or ok, exit 1 or 0.
   if (process.argv[2] === '--title-unclear') {
@@ -225,9 +273,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and create the issue.`);
       process.exit(2);
     }
-    const lines = bossMissing(body);
+    const lines = bossMissing(body, boss);
     if (lines.length) {
-      console.error(`Blocked: ${BOSS_RULE}. Missing: ${lines.join(', ')}. Add the lines and create the issue again; an access or a key is not a Boss class: Owner: Agent with the label blocked:access.`);
+      console.error(`Blocked: ${BOSS_RULE}. Missing: ${lines.join(', ')}. Write the block and create the issue again; an access or a key is not a Boss class: Owner: Agent with the label blocked:access.`);
       process.exit(2);
     }
     if (textMissing(body)) {
