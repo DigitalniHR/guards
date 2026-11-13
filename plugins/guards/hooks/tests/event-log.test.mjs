@@ -25,3 +25,16 @@ test('broken input: bad JSON logs nothing, exits 0, prints nothing (a log hook n
 test('broken input: an unwritable log folder exits 0', () => {
   const h = home(); fs.writeFileSync(path.join(h, '.claude'), 'a file, not a folder'); const r = run(h, '{}'); assert.equal(r.status, 0); assert.equal(r.stdout, '');
 });
+test('unit: the scheduled task name of the transcript wins over the folder (system#465: dhr-engineer runs in system)', () => {
+  const h = home(); const t = path.join(h, 't.jsonl');
+  fs.writeFileSync(t, JSON.stringify({ type: 'queue-operation', content: '<scheduled-task name="dhr-engineer" file="/x/SKILL.md">\nrun' }) + '\n');
+  run(h, JSON.stringify({ hook_event_name: 'StopFailure', error: 'rate_limit', cwd: '/Users/m/Claude projects/system', transcript_path: t }));
+  const [e] = lines(h); assert.equal(e.routine, 'dhr-engineer'); assert.equal(e.unit, 'dhr');
+});
+test('unit: from the folder, also an issue-engineer worktree; a scratch folder with no task name has no unit', () => {
+  const h = home();
+  run(h, JSON.stringify({ cwd: '/Users/m/Claude projects/.issue-engineer/jobboard-12' }));
+  run(h, JSON.stringify({ cwd: '/Users/m/Claude projects/studio/core' }));
+  run(h, JSON.stringify({ cwd: '/Users/m/Library/Application Support/Claude/scratch-workspaces/a/b', transcript_path: '/nope' }));
+  assert.deepEqual(lines(h).map((e) => e.unit), ['jobboard', 'studio', '']);
+});
