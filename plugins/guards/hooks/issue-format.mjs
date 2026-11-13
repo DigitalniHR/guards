@@ -4,6 +4,7 @@
 // A comment, an edit or a decision issue is not a new piece of work and is not checked for Done when and Proof.
 // An issue with "Owner: Boss" needs Recommendation and Default (bossMissing).
 // An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
+// The title of a new or renamed issue is a plain sentence, and for a Boss issue it names his act (titleUnclear).
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -13,6 +14,38 @@ const TITLE_CODE = { 'digitalnihr/dhr': /^\[[A-Z]+[-.]\d+/ };
 export function titleMissing(repo, title) {
   const rule = TITLE_CODE[String(repo || '').toLowerCase()];
   return Boolean(rule && !rule.test(String(title || '').trim()));
+}
+// The title is the one line the reader sees in a list (Boss, 13 Nov 2026: he could not tell from the Tasks page what
+// system#381 "[model-cost] The OpenRouter balance lasts 13 days" and dhr#713 "[SYS.2] Accesses agents need" asked of
+// him). The rule is for the text after the leading codes ("[SYS.2]", "[model-cost]"); standard: standards/evals.md rule 8.
+export const TITLE_RULE = 'the title is one plain sentence of the outcome or the problem, for a reader who sees only this line: after the leading code at least 4 words and at most 90 characters, no code, file name or internal marker (words such as failed_items or worker:check); a title of an issue with "Owner: Boss" also names his act: "Boss <verb> ...", "Decision: <the choice>" or "<what happens>: <what Boss does>" (examples: "AI credit ends in 13 days: add 100 USD", "Boss grants 10 accesses that block agent work"; standard: system standards/evals.md)';
+const TITLE_MIN = 4, TITLE_MAX = 90;
+const TITLE_TECH = [
+  [/`/, 'code in backticks'],
+  [/\b[\w./-]+\.(?:py|mjs|js|ts|json|md|sh|yml|yaml|sql|toml)\b/i, 'a file name'],
+  [/\b[a-z0-9]+_[a-z0-9_]+\b/i, 'an internal name'],
+  [/\b[a-z][\w-]*:[a-z][\w-]*/i, 'an internal marker'],
+];
+export function titleText(title) { return String(title || '').trim().replace(/^(?:\[[^\]]*\]\s*)+/, '').trim(); }
+// Reasons the title is unclear; an empty list passes. `boss` is true for an issue where Boss decides.
+export function titleUnclear(title, boss = false) {
+  const text = titleText(title);
+  const out = [];
+  const words = text.match(/[\p{L}\p{N}][\p{L}\p{N}'’.,%-]*/gu) || [];
+  if (words.length < TITLE_MIN) out.push(`a sentence of at least ${TITLE_MIN} words after the code (it has ${words.length}: "${text}")`);
+  if (text.length > TITLE_MAX) out.push(`at most ${TITLE_MAX} characters after the code (it has ${text.length})`);
+  for (const [re, what] of TITLE_TECH) if (re.test(text)) { out.push(`plain words (it has ${what}: "${text.match(re)[0]}")`); break; }
+  if (boss && !bossAct(text)) out.push('the act of Boss ("Boss <verb> ...", "Decision: <the choice>" or "<what happens>: <what Boss does>")');
+  return out;
+}
+// The act of Boss in a title: "Boss approves ...", "Decision: ..." or a part of at least 2 words after a colon.
+function bossAct(text) {
+  if (/\bBoss\s+[a-z]{3,}/.test(text) || /^decision\s*:\s*\S/i.test(text)) return true;
+  const after = text.includes(': ') ? text.slice(text.lastIndexOf(': ') + 2) : '';
+  return (after.match(/[\p{L}\p{N}]+/gu) || []).length >= 2;
+}
+export function bossOwned(body, command = '') {
+  return /^\W*owner\s*:\s*boss\b/im.test(String(body || '')) || /(?:--label|-l)[ =]["']?[^"'\s]*owner:boss\b/.test(String(command));
 }
 // The repository of a `gh issue create`: its -R/--repo flag, else the origin remote of the working folder; null if unknown.
 export function repoOf(command, cwd) {
@@ -135,10 +168,17 @@ export function bodyOf(command, cwd) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {   // run as a hook, not imported
   // `node issue-format.mjs --text-missing < body`: the CAO owner check on an open issue; prints missing or ok, exit 1 or 0.
   if (process.argv[2] === '--text-missing') { const m = textMissing(readFileSync(0, 'utf8')); console.log(m ? 'missing' : 'ok'); process.exit(m ? 1 : 0); }
+  // `node issue-format.mjs --title-unclear [--boss] "<title>"`: the title check for a script that opens issues (its test
+  // runs it on each title template); prints the reasons or ok, exit 1 or 0.
+  if (process.argv[2] === '--title-unclear') {
+    const boss = process.argv[3] === '--boss';
+    const m = titleUnclear(process.argv[boss ? 4 : 3], boss);
+    console.log(m.length ? m.join(', ') : 'ok'); process.exit(m.length ? 1 : 0);
+  }
   let input = {};
   try { input = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { process.exit(0); }
   const tool = String(input.tool_name || '');
-  let body, title, repo;
+  let body, title, repo, boss;
   try {
     if (tool === 'Bash') {
       const command = String(input.tool_input?.command || '');
@@ -150,15 +190,23 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       if (!create && !edit) process.exit(0);
       body = bodyOf(command, String(input.cwd || process.cwd()));
       if (body === null) process.exit(0);
-      if (edit && !create) {   // an edit that sets the body: only the public-content rule (an engineer sets Owner: Boss by an edit)
+      const t = command.match(/(?<![\w-])(?:--title|-t)[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/);
+      title = t ? (t[1] ?? t[2] ?? t[3]) : '';
+      if (title.includes('$')) title = null;   // a shell variable the guard cannot see: do not block on a guess
+      if (edit && !create) {   // an edit: the title rule for a new title, the public-content rule for a new body
+        const unclear = t && title !== null ? titleUnclear(title, bossOwned(body, command)) : [];
+        if (unclear.length) { console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and edit the issue.`); process.exit(2); }
         if (body && textMissing(body)) { console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and edit the issue again.`); process.exit(2); }
         process.exit(0);
       }
-      const t = command.match(/(?:--title|-t)[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/);
-      title = t ? (t[1] ?? t[2] ?? t[3]) : '';
+      boss = bossOwned(body, command);
       repo = repoOf(command, String(input.cwd || process.cwd()));
     } else if (/issue_write$/.test(tool)) {
       const method = String(input.tool_input?.method || '');
+      if (method === 'update' && typeof input.tool_input?.title === 'string') {
+        const unclear = titleUnclear(input.tool_input.title, bossOwned(input.tool_input?.body));
+        if (unclear.length) { console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and update the issue.`); process.exit(2); }
+      }
       if (method === 'update' && typeof input.tool_input?.body === 'string' && textMissing(input.tool_input.body)) {
         console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and update the issue again.`); process.exit(2);
       }
@@ -166,14 +214,20 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       body = input.tool_input?.body;
       title = input.tool_input?.title;
       repo = input.tool_input?.owner && input.tool_input?.repo ? `${input.tool_input.owner}/${input.tool_input.repo}` : null;
+      boss = bossOwned(body) || (input.tool_input?.labels || []).includes('owner:boss');
     } else process.exit(0);
     if (titleMissing(repo, title)) {
       console.error(`Blocked: an issue of ${repo} names its objective or initiative first in the title: [<AREA>.<objective>] or [<AREA>-n], for example "[SYS.2] ...". Find the code in the roadmap of the repository and create the issue again.`);
       process.exit(2);
     }
-    const boss = bossMissing(body);
-    if (boss.length) {
-      console.error(`Blocked: ${BOSS_RULE}. Missing: ${boss.join(', ')}. Add the lines and create the issue again; an access or a key is not a Boss class: Owner: Agent with the label blocked:access.`);
+    const unclear = title === null ? [] : titleUnclear(title, boss);
+    if (unclear.length) {
+      console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and create the issue.`);
+      process.exit(2);
+    }
+    const lines = bossMissing(body);
+    if (lines.length) {
+      console.error(`Blocked: ${BOSS_RULE}. Missing: ${lines.join(', ')}. Add the lines and create the issue again; an access or a key is not a Boss class: Owner: Agent with the label blocked:access.`);
       process.exit(2);
     }
     if (textMissing(body)) {
