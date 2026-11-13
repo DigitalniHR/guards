@@ -1,67 +1,150 @@
-// node --test hooks/tests/issue-format.test.mjs  (system#122)
+// node --test hooks/tests/issue-format.test.mjs  (system#122; the lite form of every issue: system#479)
 import test from 'node:test'; import assert from 'node:assert'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
-import { bossMissing, recommendationVague } from '../issue-format.mjs';
+import { bossMissing, recommendationVague, missing, results, doneWhen } from '../issue-format.mjs';
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'issue-format.mjs');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'if-'));
 const run = (tool_name, tool_input) => spawnSync('node', [hook], { input: JSON.stringify({ tool_name, tool_input, cwd: tmp }), encoding: 'utf8' });
-// The block that opens an issue where Boss decides (standards/evals.md rule 9, system#463).
-const BLOCK = 'What happens: The tool that makes the pictures costs 20 USD a month.\nBoss decides: Do we pay for the tool?\nOptions:\n1. Pay: 20 USD a month, pictures in minutes.\n2. Do not pay: the pictures stay manual work.\nRecommendation: Option 1, pay 20 USD a month, because it removes the manual work.\n';
-const good = 'Objective: x\n\n## Done when (all true)\n\n1. Boss opens the page and sees y.\n2. The page shows z.\n3. A reader can sign up.\n\nProof: the page read at phone width.\n';
+const cli = (args, input) => spawnSync('node', [hook, ...args], { input, encoding: 'utf8' });
+const inline = (body) => body.replace(/\n/g, '\\n');   // the body as a bash --body "..." argument
+
+// The lite form: What and why, Done when (each line with its Proof), Owner, then the detail under Details.
+const WHY = '**What and why:** The page shows an old number, so readers see a wrong result.';
+const DONE = '**Done when:**\n1. Boss opens the page and sees the new number. Proof: the page read at phone width.\n2. A reader can sign up. Proof: a test sign-up gets the e-mail.';
+const AGENT = '**Owner:** Agent: the engineer of this repository takes it and first reads the page.';
+const DETAILS = '## Details (for agents)\nUnit: web. Check ID: x.\n';
+const lite = (done = DONE, owner = AGENT) => `${WHY}\n\n${done}\n\n${owner}\n\n${DETAILS}`;
+const good = lite();
+// An issue where Boss decides: Boss decides, Options, Recommendation with "With no answer in 7 days:", Owner Boss.
+const BOSS_OWNER = '**Owner:** Boss (money): he answers on this page with a thumbs-up or the number of an option.';
+const bossBody = (owner = BOSS_OWNER, rec = 'Option 1, pay 20 USD a month, because it removes the manual work. With no answer in 7 days: nothing is paid.') =>
+  `**What and why:** The tool that makes the pictures costs 20 USD a month.\n\n**Boss decides:** Do we pay for the tool?\n\n**Options:**\n1. Pay: 20 USD a month, pictures in minutes.\n2. Do not pay: the pictures stay manual work.\n\n**Recommendation:** ${rec}\n\n${DONE}\n\n${owner}\n\n${DETAILS}`;
+const BOSS = bossBody();
 fs.writeFileSync(path.join(tmp, 'good.md'), good);
-fs.writeFileSync(path.join(tmp, 'good3.md'), 'Done when (all true):\n1. Boss sees a.\n2. Boss sees b.\n3. Boss sees c.\nProof:\n1. x\n2. y\n3. z\n');
+fs.writeFileSync(path.join(tmp, 'good3.md'), lite('**Done when:**\n1. Boss sees a. Proof: x.\n2. Boss sees b. Proof: y.\n3. Boss sees c. Proof: z.'));
 fs.writeFileSync(path.join(tmp, 'bad.md'), 'Objective: x\n\n## Steps\n- [ ] do it\n');
+const T = '--title "The page shows the new number"';
+const doneOf = (...lines) => `**Done when:**\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`;
+const create = (body, title = 'The page shows the new number') => run('Bash', { command: `gh issue create --title "${title}" --body "${inline(body)}"` });
 
 test('other commands pass', () => { assert.equal(run('Bash', { command: 'git status' }).status, 0); });
 test('a comment passes', () => { assert.equal(run('Bash', { command: 'gh issue comment 5 --body "no lines"' }).status, 0); });
-test('body file with both lines passes', () => { assert.equal(run('Bash', { command: 'gh issue create -R a/b --title "The page shows the new number" --body-file good.md' }).status, 0); });
-test('body file without the lines is blocked and names both', () => {
+test('a body file in the lite form passes', () => { assert.equal(run('Bash', { command: 'gh issue create -R a/b --title "The page shows the new number" --body-file good.md' }).status, 0); });
+test('a body file in the old form is blocked and names the parts', () => {
   const r = run('Bash', { command: `gh issue create -R a/b --title "The page shows the new number" --body-file "${path.join(tmp, 'bad.md')}"` });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Done when, Proof/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
+  assert.match(r.stderr, /\*\*What and why:\*\*/);   // the template is shown
 });
-test('inline body without Proof is blocked', () => {
-  const r = run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when:\n1. Boss sees a\n2. Boss sees b\n3. Boss sees c"' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Proof/);
-});
-test('inline body with both lines passes', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when:\n1. Boss sees a\n2. Boss sees b\n3. Boss sees c\nProof: test green"' }).status, 0);
-});
+test('an inline lite body passes', () => { assert.equal(create(good).status, 0); });
 test('no body at all is blocked', () => { assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number"' }).status, 2); });
-test('a decision issue passes', () => { assert.equal(run('Bash', { command: 'gh issue create --title "[WEB.1] Decision: offer a or b" --body "Recommendation: y"' }).status, 0); });
-test('a Boss issue without Default is blocked (dhr#761)', () => {
-  const r = run('Bash', { command: `gh issue create --title "[CNT.1] Boss pays the new tool" --body "${BLOCK.replace(/\n/g, '\\n')}Owner: Boss (money)\\nDone when:\\n1. Boss sees a\\n2. Boss sees b\\n3. Boss sees c\\nProof: run"` });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Default/);
+test('a body without What and why is blocked', () => {
+  const r = create(`${DONE}\n\n${AGENT}\n`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why/);
 });
-test('a Boss decision without Recommendation and Default is blocked', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: 'Owner: Boss (direction)\nQuestion: a or b' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What happens, Boss decides, Options, Recommendation, Default/);
+test('What and why must be the first line; an HTML comment before it is fine', () => {
+  const r = create(`Objective: x\n\n${good}`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /"What and why:" as the first line/);
+  assert.equal(create(`<!-- marker: 1 -->\n${good}`).status, 0);
 });
-test('a Boss decision with the block and Default passes', () => {
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: BLOCK + 'Owner: Boss (direction)\nDefault: a after 7 days' }).status, 0);
+test('a Done when line without Proof is blocked', () => {
+  const r = create(lite(doneOf('Boss sees a. Proof: x.', 'Boss sees b.')));
+  assert.equal(r.status, 2); assert.match(r.stderr, /"Proof:" with its check in each line of Done when \(1 of 2 have none\)/);
 });
-test('an Agent issue needs no Default', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Owner: Agent\\nDone when:\\n1. Boss sees a\\n2. Boss sees b\\n3. Boss sees c\\nProof: run"' }).status, 0);
+test('a Proof with no text after it does not count', () => {
+  assert.equal(create(lite(doneOf('Boss sees a. Proof:'))).status, 2);
 });
-test('MCP create without the lines is blocked', () => {
+test('one result passes; five pass; six are blocked', () => {
+  const n = (k) => lite(doneOf(...Array.from({ length: k }, (_, i) => `Boss sees ${i}. Proof: check ${i}.`)));
+  assert.equal(create(n(1)).status, 0);
+  assert.equal(create(n(5)).status, 0);
+  const r = create(n(6));
+  assert.equal(r.status, 2); assert.match(r.stderr, /1 to 5 results \(it has 6\)/);
+});
+test('a Done when written as one sentence is one result', () => {
+  assert.equal(create(lite('**Done when:** Boss sees the number on the page. Proof: the page read at phone width.')).status, 0);
+  assert.deepEqual(results(lite('**Done when:** Boss sees a. Proof: x.')).length, 1);
+});
+test('a body without Owner is blocked', () => {
+  const r = create(`${WHY}\n\n${DONE}\n`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Owner/);
+});
+test('both the plain and the bold owner line count', () => {
+  assert.equal(create(lite(DONE, 'Owner: Agent: the engineer takes it and first reads the page.')).status, 0);
+  assert.equal(create(`${WHY}\n\n${DONE}\n\nOwner: Agent\n`).status, 0);
+});
+test('MCP create without the lines is blocked, with the lite form passes', () => {
   assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The page shows the new number', body: 'no lines' }).status, 2);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The page shows the new number', body: good }).status, 0);
 });
-test('MCP create of a decision passes', () => {
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: 'Recommendation: y' }).status, 0);
+test('a Decision title has no exemption: the lite form is needed (system#479)', () => {
+  const r = run('Bash', { command: 'gh issue create --title "[WEB.1] Decision: offer a or b" --body "Recommendation: y"' });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: 'Recommendation: y' }).status, 2);
 });
-test('a technical Done when is blocked (Boss level)', () => {
-  const r = run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when: PR merged and tests pass\nProof: CI"' });
+
+// An issue where Boss decides.
+test('a Boss issue with the block, the 7-day answer and a bold owner line passes', () => {
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: BOSS }).status, 0);
+  assert.equal(create(BOSS, '[CNT.1] Boss pays the new tool').status, 0);
+});
+test('a plain "Owner: Boss" line is a Boss issue as well', () => {
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: bossBody('Owner: Boss (money): he answers.') }).status, 0);
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: lite(DONE, 'Owner: Boss (money): he answers.') });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Boss decides, Options, Recommendation/);
+});
+test('a Boss issue without "With no answer in 7 days:" is blocked (dhr#761)', () => {
+  const r = create(bossBody(BOSS_OWNER, 'Option 1, pay 20 USD a month, because it removes the manual work.'), '[CNT.1] Boss pays the new tool');
+  assert.equal(r.status, 2); assert.match(r.stderr, /With no answer in 7 days/);
+});
+test('a Boss issue without the block is blocked and names the parts', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: lite(DONE, BOSS_OWNER) });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Boss decides, Options, Recommendation/);
+});
+test('an Agent issue needs no block and no 7-day answer', () => { assert.equal(create(good).status, 0); });
+test('the label owner:boss makes it a Boss issue', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', labels: ['owner:boss'], body: good });
+  assert.equal(r.status, 2); assert.match(r.stderr, /Boss decides/);
+});
+
+// Done when at Boss level: no code, file name or output words before Proof; technical words after Proof are fine.
+test('a technical Done when is blocked (Boss level), also a file name', () => {
+  const r = create(lite(doneOf('PR merged and tests pass. Proof: CI.')));
   assert.equal(r.status, 2); assert.match(r.stderr, /Boss level/);
-});
-test('a file name in Done when is blocked', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when: app/x.py reads the source\nProof: run"' }).status, 2);
+  assert.equal(create(lite(doneOf('app/x.py reads the source. Proof: run.'))).status, 2);
+  assert.equal(create(lite(doneOf('The script `run` reads the source. Proof: run.'))).status, 2);
 });
 test('an empty Done when heading is blocked', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "## Done when\n\nProof: run"' }).status, 2);
+  assert.equal(create(`${WHY}\n\n## Done when\n\nProof: run\n\n${AGENT}\n`).status, 2);
 });
-test('technical words in Proof are fine', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when:\n1. The form is on every article\n2. A test sign-up gets the e-mail\n3. The report shows the funnel\nProof: pytest green, report read"' }).status, 0);
+test('technical words after Proof are fine', () => {
+  assert.equal(create(lite(doneOf('The form is on every article. Proof: pytest green, the PR merged, app/x.py reads the page.', 'The report shows the funnel. Proof: CI passes, commit read.'))).status, 0);
 });
+test('a time window before Proof is blocked, after Proof it is fine', () => {
+  const r = create(lite(doneOf('Direct is under 40 % for two weeks. Proof: report.')));
+  assert.equal(r.status, 2); assert.match(r.stderr, /time window: "for two weeks"/);
+  assert.equal(create(lite(doneOf('Direct is under 40 %. Proof: the report of the next two weeks, read after the baseline.'))).status, 0);
+});
+test('names of system parts in Done when pass (system#138); output words stay blocked', () => {
+  assert.equal(create(lite(doneOf('The script writes the eval and the routine reads it. Proof: run.', 'The hook passes it. Proof: run.'))).status, 0);
+  assert.equal(create(lite(doneOf('PR merged. Proof: CI.', 'tests pass. Proof: CI.', 'commit made. Proof: log.'))).status, 2);
+});
+
+// The length of the part above the first heading.
+const filler = (n) => Array.from({ length: n }, () => 'word').join(' ');
+test('a top part over the word limit is blocked; the same text under Details passes', () => {
+  const long = `**What and why:** The page shows an old number. ${filler(210)}\n\n${DONE}\n\n${AGENT}\n`;
+  const r = create(long);
+  assert.equal(r.status, 2); assert.match(r.stderr, /a short part above the first heading/);
+  assert.equal(create(`${WHY}\n\n${DONE}\n\n${AGENT}\n\n## Details (for agents)\n${filler(400)}\n`).status, 0);
+});
+test('a Boss issue may have a longer top part (300 words) than an agent issue (150)', () => {
+  const body = (owner) => `**What and why:** The page shows an old number. ${filler(250)}\n\n${DONE}\n\n${owner}\n`;
+  assert.match(missing(body(AGENT)).join(), /a short part above the first heading/);
+  assert.deepEqual(missing(body(BOSS_OWNER)), []);
+  assert.deepEqual(missing(body(AGENT), true), []);   // the label names Boss
+});
+
 test('a comment whose text names the create command passes', () => {
   assert.equal(run('Bash', { command: 'gh issue comment 5 --body "a gh issue create with PR merged was blocked"' }).status, 0);
 });
@@ -71,32 +154,7 @@ test('a here-doc that names the create command passes', () => {
 test('a create after cd && is still checked', () => {
   assert.equal(run('Bash', { command: 'cd /tmp && gh issue create --title "The page shows the new number" --body "no lines"' }).status, 2);
 });
-test('one criterion is blocked (3 to 8)', () => {
-  const r = run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when: Boss sees it\nProof: run"' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /3 to 8 criteria \(it has 1\)/);
-});
-test('nine criteria are blocked', () => {
-  const list = Array.from({ length: 9 }, (_, i) => `${i + 1}. Boss sees ${i}`).join('\n');
-  assert.equal(run('Bash', { command: `gh issue create --title "The page shows the new number" --body "Done when:\n${list}\nProof: run"` }).status, 2);
-});
-test('a time window is blocked', () => {
-  const r = run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when:\n1. Direct is under 40 % for two weeks\n2. a\n3. b\nProof: report"' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /time window: "for two weeks"/);
-});
-test('the standard example passes', () => {
-  const body = 'Done when (all true):\n1. The content wiki follows three X accounts.\n2. The wiki shows at least 10 posts of each.\n3. Each post has a summary.\nNot done when: the wiki has no posts.\nProof:\n1. sources list\n2. count\n3. query';
-  assert.equal(run('Bash', { command: `gh issue create --title "The page shows the new number" --body "${body}"` }).status, 0);
-});
 test('MCP update passes', () => { assert.equal(run('mcp__github__issue_write', { method: 'update', body: 'x' }).status, 0); });
-
-// system#138: names of system parts are fine in a Done when; output words stay blocked.
-const L3 = '1. The script writes the eval.\n2. The routine reads it.\n3. The hook passes it.';
-test('names of system parts in Done when pass (system#138)', () => {
-  assert.equal(run('Bash', { command: `gh issue create --title "The page shows the new number" --body "Done when:\n${L3}\nProof: run"` }).status, 0);
-});
-test('output words in Done when stay blocked (system#138)', () => {
-  assert.equal(run('Bash', { command: 'gh issue create --title "The page shows the new number" --body "Done when:\n1. PR merged\n2. tests pass\n3. commit made\nProof: CI"' }).status, 2);
-});
 
 // system#139: a body file given by a variable or ~ is read; an unreadable one does not block.
 function runEnv(command, env) {
@@ -129,50 +187,52 @@ test('the MCP create of a dhr issue without a code is blocked', () => {
   assert.equal(run('mcp__github__issue_write', { method: 'create', owner: 'DigitalniHR', repo: 'dhr', title: 'The page shows the new number', body: good }).status, 2);
 });
 test('a here-doc body with quoted words is read whole (owner run, 8 Nov 2026)', () => {
-  const cmd = 'gh issue create -R a/b --title "The page shows the new number" --body "$(cat <<\'EOF\'\nOwner: Agent\nObjective: the API said "disabled" and "not found".\n\nDone when:\n- Boss sees a.\n- Boss sees b.\n- Boss sees c.\n\nProof:\n- x\n- y\n- z\nEOF\n)"';
+  const body = lite().replace('an old number', 'the API said "disabled" and "not found"');
+  const cmd = `gh issue create -R a/b --title "The page shows the new number" --body "$(cat <<'EOF'\n${body}EOF\n)"`;
   assert.equal(run('Bash', { command: cmd }).status, 0);
 });
 test('a here-doc body with quoted words and no Done when is still blocked', () => {
-  const cmd = 'gh issue create -R a/b --title "The page shows the new number" --body "$(cat <<\'EOF\'\nObjective: the API said "disabled".\nSteps: none\nEOF\n)"';
+  const cmd = 'gh issue create -R a/b --title "The page shows the new number" --body "$(cat <<\'EOF\'\n**What and why:** the API said "disabled".\n\n' + AGENT + '\nEOF\n)"';
   const r = run('Bash', { command: cmd }); assert.equal(r.status, 2); assert.match(r.stderr, /Done when/);
 });
 
 // Boss, 11 Nov 2026 (CLAUDE.md, Only Boss decides): a public-content approval shows the full text or one approval page.
-const PC = BLOCK + 'Owner: Boss (public content)\nDefault: none, public text waits for Boss\n';
+const PC = bossBody('**Owner:** Boss (public content): he answers on this page with a thumbs-up or the number of an option.').replace(DETAILS, '');
 const FULL = '\n## Full text\n\n### Item 1: homepage title\nCurrent: Personální agentura pro IT a digitál\nNew: Najdeme vám lidi do IT a digitálu do 30 dní\n';
+const DEC = '[WEB.1] Decision: offer a or b';
 test('a public-content Decision with only a summary and links is blocked (dhr#893)', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: new texts of the home page', body: PC + 'Summary: 5 new titles, see https://github.com/DigitalniHR/dhr/issues/931#issuecomment-6762831255' });
+  const r = run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Summary: 5 new titles, see https://github.com/DigitalniHR/dhr/issues/931#issuecomment-6762831255' });
   assert.equal(r.status, 2); assert.match(r.stderr, /Full text/);
 });
 test('a public-content Decision that names its piece file passes (studio content/README.md)', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: PC + 'Draft: `content/dhr/web/homepage-hero/7-FINAL.md`\n' });
+  const r = run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Draft: `content/dhr/web/homepage-hero/7-FINAL.md`\n' });
   assert.equal(r.status, 0);
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: PC + 'Draft: see the chat\n' }).status, 2);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Draft: see the chat\n' }).status, 2);
 });
 test('a public-content Decision whose Full text is only links is blocked', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: PC + '\n## Full text\n- https://github.com/a/b/issues/1#issuecomment-2\n- [preview](https://claude.ai/code/artifact/x)\n' });
+  const r = run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + '\n## Full text\n- https://github.com/a/b/issues/1#issuecomment-2\n- [preview](https://claude.ai/code/artifact/x)\n' });
   assert.equal(r.status, 2);
 });
 test('a public-content Decision with the full text passes', () => {
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: PC + FULL }).status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + FULL }).status, 0);
 });
 test('a public-content Decision with an approval page passes', () => {
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: PC + 'Approval page: https://claude.ai/code/artifact/abc\n' }).status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Approval page: https://claude.ai/code/artifact/abc\n' }).status, 0);
 });
 test('an edit that sets Owner: Boss (public content) without the text is blocked', () => {
-  const r = run('Bash', { command: `gh issue edit 893 -R DigitalniHR/dhr --body "${PC.replace(/\n/g, '\\n')}Summary: new texts"` });
+  const r = run('Bash', { command: `gh issue edit 893 -R DigitalniHR/dhr --body "${inline(PC)}Summary: new texts"` });
   assert.equal(r.status, 2); assert.match(r.stderr, /public content/);
   assert.equal(run('mcp__github__issue_write', { method: 'update', body: PC + 'Summary only' }).status, 2);
 });
 test('an edit with the full text, an edit without a body and another Boss class pass', () => {
   assert.equal(run('mcp__github__issue_write', { method: 'update', body: PC + FULL }).status, 0);
   assert.equal(run('Bash', { command: 'gh issue edit 893 --add-label status:review' }).status, 0);
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: BLOCK + 'Owner: Boss (money)\nDefault: a after 7 days' }).status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: DEC, body: BOSS }).status, 0);
 });
 test('the CAO check mode prints missing or ok', () => {
-  const m = spawnSync('node', [hook, '--text-missing'], { input: PC + 'Summary only', encoding: 'utf8' });
+  const m = cli(['--text-missing'], PC + 'Summary only');
   assert.equal(m.status, 1); assert.equal(m.stdout.trim(), 'missing');
-  assert.equal(spawnSync('node', [hook, '--text-missing'], { input: PC + FULL, encoding: 'utf8' }).stdout.trim(), 'ok');
+  assert.equal(cli(['--text-missing'], PC + FULL).stdout.trim(), 'ok');
 });
 
 // The title rule (Boss, 13 Nov 2026; standards/evals.md rule 8).
@@ -199,11 +259,10 @@ test('a Boss issue names his act in the title (system#381)', () => {
   assert.deepEqual(titleUnclear('[model-cost] AI credit ends in 13 days: add 100 USD', true), []);
   assert.deepEqual(titleUnclear('[SYS.2] Boss grants 10 accesses that block agent work', true), []);
   assert.deepEqual(titleUnclear('[EDU.1] Decision: offer the advanced course again or drop it', true), []);
-  const body = BLOCK.replace(/\n/g, '\\n') + 'Owner: Boss (money)\\nDefault: z\\nDone when:\\n1. Boss sees a\\n2. Boss sees b\\n3. Boss sees c\\nProof: run';
-  const bad = run('Bash', { command: `gh issue create --title "[model-cost] The OpenRouter balance lasts 13 days" --body "${body}"` });
+  const bad = create(BOSS, '[model-cost] The OpenRouter balance lasts 13 days');
   assert.equal(bad.status, 2); assert.match(bad.stderr, /the act of Boss/);
-  assert.equal(run('Bash', { command: `gh issue create --title "[model-cost] AI credit ends in 13 days: add 100 USD" --body "${body}"` }).status, 0);
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The credit of the tool is low', labels: ['owner:boss'], body: body.replace(/\\n/g, '\n') }).status, 2);
+  assert.equal(create(BOSS, '[model-cost] AI credit ends in 13 days: add 100 USD').status, 0);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The credit of the tool is low', labels: ['owner:boss'], body: BOSS }).status, 2);
 });
 test('a new title in an edit is checked; an edit without a title passes', () => {
   assert.equal(run('Bash', { command: 'gh issue edit 5 -R a/b --title "Accesses agents need"' }).status, 2);
@@ -213,44 +272,60 @@ test('a new title in an edit is checked; an edit without a title passes', () => 
   assert.equal(run('mcp__github__issue_write', { method: 'update', issue_number: 5, title: 'Short label' }).status, 2);
 });
 
-// The block for Boss (Boss, 13 Nov 2026, on dhr#34: "I do not understand it at all"; standards/evals.md rule 9; system#463).
+// The part for Boss (Boss, 13 Nov 2026, on dhr#34: "I do not understand it at all"; standards/evals.md; system#463).
 const OLD34 = 'Owner: Boss (money, direction)\nRecommendation: set the threshold of the demand test (seats or CZK) and the price, or move EDU-16 to Later (Decision #14 closed by its Default).\nDefault: no presale or waiting-list page; no course production starts.\n\n## Problem\nEarlier online courses did not sell.\n';
-test('a Boss issue without the block is blocked (dhr#34)', () => {
+test('a Boss issue in the old form is blocked (dhr#34)', () => {
   const r = run('mcp__github__issue_write', { method: 'create', title: '[EDU-16] Boss sets the threshold and price of the demand test', body: OLD34 });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What happens, Boss decides, Options/); assert.match(r.stderr, /it names no value|it offers a choice/);
-  const cli = run('Bash', { command: `gh issue create -R a/b --title "Boss sets the price of the new course" --body "${OLD34.replace(/\n/g, '\\n')}"` });
-  assert.equal(cli.status, 2); assert.match(cli.stderr, /What happens/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when\./);
+  assert.match(bossMissing(OLD34).join(), /it names no value|it offers a choice/);
+  const c = run('Bash', { command: `gh issue create -R a/b --title "Boss sets the price of the new course" --body "${inline(OLD34)}"` });
+  assert.equal(c.status, 2); assert.match(c.stderr, /What and why/);
 });
-test('a Boss issue with the block passes, and the block must open the issue', () => {
-  const tail = 'Owner: Boss (money)\nDefault: nothing is paid.\n';
-  assert.deepEqual(bossMissing(BLOCK + tail), []);
-  assert.deepEqual(bossMissing('**What happens:** The tool costs 20 USD a month.\n\n**Boss decides:** Do we pay?\n\n**Options:**\n1. Pay 20 USD a month.\n2. Do not pay.\n\n**Recommendation:** Yes, pay 20 USD a month: it removes the manual work.\n\n' + tail), []);
-  assert.match(bossMissing(tail + BLOCK).join(), /first lines/);
-  assert.deepEqual(bossMissing('Owner: Agent\nno block'), []);
-  assert.match(bossMissing('no owner line, the label names Boss', true).join(), /What happens/);
+test('bossMissing: the block with the 7-day answer passes, in bold or plain', () => {
+  assert.deepEqual(bossMissing(BOSS), []);
+  assert.deepEqual(bossMissing(BOSS.replace(/\*\*/g, '')), []);
+  assert.deepEqual(bossMissing(lite()), []);   // an agent issue: no block needed
+  assert.match(bossMissing('no owner line, the label names Boss', true).join(), /Boss decides/);
+  assert.match(bossMissing(bossBody(BOSS_OWNER, 'Option 1, pay 20 USD a month.')).join(), /With no answer in 7 days/);
 });
 test('a recommendation that only repeats the choice is blocked', () => {
   for (const bad of ['set the threshold of the demand test and the price, or move it to Later', 'Decide between the waiting list and the presale', 'Boss chooses A or B', 'offer the course again or drop its link', 'Set the price', 'Either option works'])
     assert.notEqual(recommendationVague(bad), '', bad);
   for (const ok of ['Option 3, not now. The live course sells 5 seats in 30 days.', 'Yes: add 100 USD, or the agents stop in 13 days.', 'Set the limit to 50 USD a week, the same as the other keys.', 'No, keep the free plan (the paid one adds nothing we use or need).', '**Option 1**, pay 20 USD a month.'])
     assert.equal(recommendationVague(ok), '', ok);
-  const body = BLOCK.replace(/Recommendation: .*/, 'Recommendation: pay the tool or keep the manual work') + 'Owner: Boss (money)\nDefault: nothing is paid.\n';
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[CNT.1] Boss pays the new picture tool', body });
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[CNT.1] Boss pays the new picture tool', body: bossBody(BOSS_OWNER, 'pay the tool or keep the manual work. With no answer in 7 days: nothing is paid.') });
   assert.equal(r.status, 2); assert.match(r.stderr, /one concrete answer \(it offers a choice/);
 });
 test('the block has 2 or 3 options and plain words', () => {
-  const tail = 'Owner: Boss (money)\nDefault: nothing is paid.\n';
-  assert.match(bossMissing(BLOCK.replace(/2\. Do not pay.*\n/, '') + tail).join(), /list of 2 or 3 \(it has 1\)/);
-  assert.match(bossMissing(BLOCK.replace('The tool that', 'The script `run.py` that') + tail).join(), /plain words in "What happens:"/);
-});
-test('the check mode for an open Boss issue prints the reasons or ok', () => {
-  const bad = spawnSync('node', [hook, '--boss-missing'], { input: OLD34, encoding: 'utf8' });
-  assert.equal(bad.status, 1); assert.match(bad.stdout, /What happens/);
-  assert.equal(spawnSync('node', [hook, '--boss-missing'], { input: BLOCK + 'Owner: Boss (money)\nDefault: x\n', encoding: 'utf8' }).stdout.trim(), 'ok');
+  assert.match(bossMissing(BOSS.replace(/2\. Do not pay.*\n/, '')).join(), /list of 2 or 3 \(it has 1\)/);
+  assert.match(bossMissing(BOSS.replace('The tool that', 'The script `run.py` that')).join(), /plain words in "What and why:"/);
 });
 
+// The check modes for a script that opens issues and for an open issue.
+test('--missing prints ok or the reasons; --boss and --boss-missing use the label rule', () => {
+  const ok = cli(['--missing'], good);
+  assert.equal(ok.status, 0); assert.equal(ok.stdout.trim(), 'ok');
+  const bad = cli(['--missing'], OLD34);
+  assert.equal(bad.status, 1); assert.match(bad.stdout, /What and why, Done when, Boss decides, Options/);
+  assert.equal(cli(['--missing'], BOSS).stdout.trim(), 'ok');
+  const noBlock = cli(['--missing', '--boss'], good);   // the label names Boss, the body has no block
+  assert.equal(noBlock.status, 1); assert.match(noBlock.stdout, /Boss decides/);
+  assert.equal(cli(['--missing', '--boss'], BOSS).stdout.trim(), 'ok');
+});
+test('--boss-missing is the same as --missing --boss', () => {
+  const bad = cli(['--boss-missing'], OLD34);
+  assert.equal(bad.status, 1); assert.match(bad.stdout, /Boss decides/);
+  assert.equal(cli(['--boss-missing'], BOSS).stdout.trim(), 'ok');
+  assert.equal(cli(['--boss-missing'], good).status, 1);
+});
+test('--title-unclear prints ok or the reasons', () => {
+  assert.equal(cli(['--title-unclear', 'The page shows the new number']).stdout.trim(), 'ok');
+  assert.equal(cli(['--title-unclear', 'Accesses agents need']).status, 1);
+  assert.equal(cli(['--title-unclear', '--boss', 'AI credit ends in 13 days: add 100 USD']).stdout.trim(), 'ok');
+});
+test('doneWhen reads the bold heading', () => { assert.match(doneWhen(good), /^1\. Boss opens the page/); });
+
 // The body file is written by the same command: the guard reads the here-doc, not the disk (system#469).
-const T = '--title "The page shows the new number"';
 test('a complete body written by a here-doc in the same command passes', () => {
   assert.equal(run('Bash', { command: `cat > /tmp/if-none/new.md <<'EOF'\n${good}EOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/new.md` }).status, 0);
 });
@@ -262,7 +337,7 @@ test('cat <<EOF > path and --body "$(cat path)" pass', () => {
 });
 test('an incomplete body written in the same command is blocked', () => {
   const r = run('Bash', { command: `cat > /tmp/if-none/new.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/new.md` });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Done when, Proof/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
 });
 test('the here-doc wins over an older file on the disk', () => {
   const r = run('Bash', { command: `cat > good.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file good.md` });
