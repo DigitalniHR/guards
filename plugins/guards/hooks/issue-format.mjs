@@ -2,7 +2,7 @@
 // issues had a "Done when" line; work was closed half done). Blocks (exit 2) `gh issue create` and the GitHub MCP
 // issue_write create when the body does not have the lite form (missing): What and why, Done when with the proof in
 // each line. Who acts next is the assignee, not a body line (system#526). A comment or an edit is not checked for the form.
-// An issue where Boss decides (a "Boss decides:" block, the class line "Owner: Boss (<class>)" or the assignee DigitalniHR)
+// An issue where Boss decides (a "Boss decides:" block, the class line "Owner: Boss (<class>)" or the assignee is the Boss login)
 // also has Boss decides, Options and Recommendation with "With no answer in 7 days:" (bossMissing). Only agents pass
 // this hook: Boss on the GitHub web or app is never blocked.
 // An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
@@ -48,12 +48,16 @@ function bossAct(text) {
 }
 // An issue where Boss decides: its body asks him ("Boss decides:"), names the class ("Owner: Boss (<class>)"), or the
 // command assigns it to Boss (gh --assignee / -a DigitalniHR; system#526: the assignee is who acts next).
-export const BOSS_LOGIN = process.env.BOSS_LOGIN || 'DigitalniHR';
+// The login comes from accounts.json beside the plugin (system#542; the plugin is copied whole to the public repository).
+function readBossLogin() {
+  try { return JSON.parse(readFileSync(new URL('../accounts.json', import.meta.url), 'utf8')).boss || null; } catch { return null; }
+}
+export const BOSS_LOGIN = process.env.BOSS_LOGIN || readBossLogin();
 export function bossOwned(body, command = '', assignees = []) {
   const b = String(body || '');
   return /^\W*boss decides\s*:/im.test(b) || /^\W*owner\s*:\W*boss\s*\(/im.test(b)
-    || new RegExp(`(?:--assignee|-a)[ =]["']?[^"'\\s]*\\b${BOSS_LOGIN}\\b`).test(String(command))
-    || (assignees || []).includes(BOSS_LOGIN);
+    || (BOSS_LOGIN && new RegExp(`(?:--assignee|-a)[ =]["']?[^"'\\s]*\\b${BOSS_LOGIN}\\b`).test(String(command)))
+    || (BOSS_LOGIN && (assignees || []).includes(BOSS_LOGIN));
 }
 // The repository of a `gh issue create`: its -R/--repo flag, else the origin remote of the working folder; null if unknown.
 export function repoOf(command, cwd) {
@@ -69,7 +73,7 @@ export function repoOf(command, cwd) {
 // The lite form of every issue (Boss approved it on 13 Nov 2026, system#479; standards/evals.md): What and why, Done
 // when with the proof in each line; an issue where Boss decides also has Boss decides, Options, Recommendation and the
 // class line "Owner: Boss (<class>)". The assignee says who acts next (system#526).
-export const TEMPLATE = '**What and why:** <1 to 3 sentences in business words; each internal term with its meaning>\n\n**Done when:**\n1. <a result Boss or a customer sees, true or false>. Proof: <the check, and where to open it>.\n(1 to 5 lines)\n\n(assign it: --assignee Agent-digihr for agent work, --assignee DigitalniHR where Boss decides)\n\n## Details (for agents)\n<optional: steps, links, times, markers>';
+export const TEMPLATE = '**What and why:** <1 to 3 sentences in business words; each internal term with its meaning>\n\n**Done when:**\n1. <a result Boss or a customer sees, true or false>. Proof: <the check, and where to open it>.\n(1 to 5 lines)\n\n(assign it: --assignee Agent-digihr for agent work, --assignee ' + (BOSS_LOGIN || '<the Boss login>') + ' where Boss decides)\n\n## Details (for agents)\n<optional: steps, links, times, markers>';
 export const RULE = 'a new issue has the lite form: "What and why:" opens it (1 to 3 sentences in business words), "Done when:" is a list of 1 to 5 results, each true or false, checkable when the work ends (no time window such as "for two weeks"), in Boss words (no code, file or "merged/PR/tests" words) and each with its check after "Proof:" in the same line; the assignee (one: Agent-digihr or DigitalniHR) says who acts next; detail only an agent needs goes under "## Details (for agents)" (template and examples: system standards/evals.md)';
 
 // The Done when section: its first line and the lines under it, to a heading or the next key line ("Owner:", ...).

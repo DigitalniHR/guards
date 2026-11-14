@@ -1,0 +1,8 @@
+{
+  "about": "The account names of the system in one place: scripts read them here, so a rename of the Boss login is a one-value change (system#542).",
+  "owner": "DigitalniHR",
+  "boss": "DigitalniHR",
+  "agent": "Agent-digihr",
+  "repos": ["system", "studio", "jobboard", "dhr"],
+  "other_repos": ["lab", "guards"]
+}
