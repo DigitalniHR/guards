@@ -17,11 +17,6 @@
       "description": "Waits for an access; the line is in Accesses agents need"
     },
     {
-      "name": "later",
-      "color": "c5def5",
-      "description": "Waits for another issue first; the engineer does not take it"
-    },
-    {
       "name": "boss:question",
       "color": "fbca04",
       "description": "Boss was asked one question; his next answer removes it"
@@ -111,6 +106,7 @@
     "status:in-progress": "in-progress",
     "review": "status:review",
     "problem": "",
-    "owner:boss": ""
+    "owner:boss": "",
+    "later": ""
   }
 }
