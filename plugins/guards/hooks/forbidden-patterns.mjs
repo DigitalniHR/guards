@@ -27,6 +27,9 @@ export const DENY = [
   [re(`${G}push\\b${S}\\s\\+[\\w./-]`), 'force push (+refspec)', 'push a new branch and open a new PR'],
   [re(`${G}reset\\b${S}\\s--hard\\b`), 'git reset --hard', 'make a new worktree from origin/main'],
   [re(`${G}branch\\b${S}\\s-[a-zA-Z]*D\\b`), 'git branch -D', 'a branch merged into origin/main passes this hook by itself (system#97); an unmerged branch stays: push it and open a PR, or leave it'],
+  // A label delete removes the mark from every issue and cannot come back (standards/github.md; Boss, 14 Nov 2026: a guard
+  // only where an error is hard to undo). The remove of a label from one issue (issues/<n>/labels/<name>) passes.
+  [re(String.raw`\bgh\s+label\s+delete\b|\bgh\s+api\b[^\n;&|]*(?:-X\s*|--method[\s=]+)DELETE[^\n;&|]*\brepos\/[^/\s]+\/[^/\s]+\/labels\/|\bgh\s+api\b[^\n;&|]*\brepos\/[^/\s]+\/[^/\s]+\/labels\/[^\n;&|]*(?:-X\s*|--method[\s=]+)DELETE`), 'label delete (the mark leaves every issue)', 'Boss decides a label delete; remove the label from one issue with gh api -X DELETE repos/<o>/<r>/issues/<n>/labels/<name>'],
   [re(String.raw`\bgh\s+(repo|release)\s+delete\b`), 'GitHub repo/release delete', 'Boss does this himself. Stop and report'],
   [re(String.raw`\brailway\s+(down|delete|(service|environment|project|variables?|volume|redis|database)\s+delete)\b`), 'Railway delete', 'Boss does this himself. Stop and report'],
   [re(String.raw`\brm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+)+(--\s+)?("|')?(\/|~|\$HOME)("|')?\/?(\*)?(\s|;|&|\||$)`), 'rm -r on / or home', 'delete the exact folder by its full path'],

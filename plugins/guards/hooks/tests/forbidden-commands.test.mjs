@@ -127,3 +127,11 @@ test('a branch with later work than its merged PR stays blocked (system#291)', (
   git('checkout', '-q', 'sq2'); fs.writeFileSync(path.join(repo, 'e.txt'), 'e2'); git('commit', '-q', '-am', 'e2'); git('checkout', '-q', 'main');
   const r = run(`${DEL} sq2`, repo, [{ merged_at: '2026-11-10T22:00:00Z', head: { sha: sq2tip } }]); assert.equal(r.status, 2); assert.match(r.stderr, /\(sq2\)/);
 });
+
+// A label delete is hard to undo (system#515): blocked; a remove of a label from one issue passes.
+test('a label delete is blocked; a remove from one issue passes', () => {
+  for (const c of ['gh label delete review -R a/b --yes', 'gh api -X DELETE repos/a/b/labels/review', 'gh api repos/a/b/labels/review -X DELETE'])
+    assert.equal(run(c, tmp).status, 2, c);
+  for (const c of ['gh api -X DELETE repos/a/b/issues/4/labels/review', 'gh label list -R a/b', 'git push origin main'])
+    assert.equal(run(c, tmp).status, 0, c);
+});

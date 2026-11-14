@@ -1,5 +1,5 @@
 {
-  "about": "The one list of GitHub labels of the 4 repositories (standards/github.md, section Labels; system#508, system#515). bin/labels_sync.py makes each repository hold `canonical`; hook label-guard.mjs blocks a label write of a name that is not in `canonical`, `families` or `defaults`, and every write of an `old` name.",
+  "about": "The one list of GitHub labels of the 4 repositories (standards/github.md, section Labels; system#508, system#515). bin/labels_sync.py makes each repository hold `canonical`; bin/github_check.py renames a label outside `canonical`, `families` or `defaults` and every `old` name on open issues (no guard blocks a label: Boss is never blocked).",
   "canonical": [
     { "name": "in-progress", "color": "fbca04", "description": "An agent works this issue now; the queue skips it" },
     { "name": "status:review", "color": "fbca04", "description": "Merged; an agent re-checks the proof on its Proof date" },
@@ -20,7 +20,7 @@
     { "name": "priority:3", "color": "fbca04", "description": "Third in the engineer queue of its repository" },
     { "name": "duplicate", "color": "cfd3d7", "description": "This issue already exists; closed with the link" }
   ],
-  "families": ["chapter:*", "obj:*", "part:*", "client:*", "small", "large", "seo-audit"],
+  "families": ["chapter:*", "obj:*", "part:*", "client:*", "small", "large", "seo-audit", "data-defect"],
   "defaults": ["bug", "documentation", "enhancement", "good first issue", "help wanted", "invalid", "question", "wontfix"],
-  "old": { "status:in-progress": "in-progress", "review": "status:review" }
+  "old": { "status:in-progress": "in-progress", "review": "status:review", "problem": "" }
 }
