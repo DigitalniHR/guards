@@ -33,7 +33,7 @@ test('a comment passes', () => { assert.equal(run('Bash', { command: 'gh issue c
 test('a body file in the lite form passes', () => { assert.equal(run('Bash', { command: 'gh issue create -R a/b --title "The page shows the new number" --body-file good.md' }).status, 0); });
 test('a body file in the old form is blocked and names the parts', () => {
   const r = run('Bash', { command: `gh issue create -R a/b --title "The page shows the new number" --body-file "${path.join(tmp, 'bad.md')}"` });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when\./);
   assert.match(r.stderr, /\*\*What and why:\*\*/);   // the template is shown
 });
 test('an inline lite body passes', () => { assert.equal(create(good).status, 0); });
@@ -65,9 +65,11 @@ test('a Done when written as one sentence is one result', () => {
   assert.equal(create(lite('**Done when:** Boss sees the number on the page. Proof: the page read at phone width.')).status, 0);
   assert.deepEqual(results(lite('**Done when:** Boss sees a. Proof: x.')).length, 1);
 });
-test('a body without Owner is blocked', () => {
-  const r = create(`${WHY}\n\n${DONE}\n`);
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Owner/);
+test('a body without Owner passes: the assignee says who acts next (system#526)', () => {
+  assert.equal(create(`${WHY}\n\n${DONE}\n`).status, 0);
+});
+test('help of gh issue create passes', () => {
+  assert.equal(run('Bash', { command: 'gh issue create --help | grep -i assignee' }).status, 0);
 });
 test('both the plain and the bold owner line count', () => {
   assert.equal(create(lite(DONE, 'Owner: Agent: the engineer takes it and first reads the page.')).status, 0);
@@ -79,7 +81,7 @@ test('MCP create without the lines is blocked, with the lite form passes', () =>
 });
 test('a Decision title has no exemption: the lite form is needed (system#479)', () => {
   const r = run('Bash', { command: 'gh issue create --title "[WEB.1] Decision: offer a or b" --body "Recommendation: y"' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when\./);
   assert.equal(run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', body: 'Recommendation: y' }).status, 2);
 });
 
@@ -102,9 +104,12 @@ test('a Boss issue without the block is blocked and names the parts', () => {
   assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Boss decides, Options, Recommendation/);
 });
 test('an Agent issue needs no block and no 7-day answer', () => { assert.equal(create(good).status, 0); });
-test('the label owner:boss makes it a Boss issue', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', labels: ['owner:boss'], body: good });
+test('the assignee DigitalniHR makes it a Boss issue (system#526)', () => {
+  const r = run('mcp__github__issue_write', { method: 'create', title: '[WEB.1] Decision: offer a or b', assignees: ['DigitalniHR'], body: good });
   assert.equal(r.status, 2); assert.match(r.stderr, /Boss decides/);
+  const g = run('Bash', { command: `gh issue create -R a/b --title "[WEB.1] Decision: offer a or b" --assignee DigitalniHR --body "${good.replace(/"/g, '\\"')}"` });
+  assert.equal(g.status, 2); assert.match(g.stderr, /Boss decides/);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The page shows the new number', assignees: ['Agent-digihr'], body: good }).status, 0);
 });
 
 // Done when at Boss level: no code, file name or output words before Proof; technical words after Proof are fine.
@@ -252,7 +257,7 @@ test('a Boss issue names his act in the title (system#381)', () => {
   const bad = create(BOSS, '[model-cost] The OpenRouter balance lasts 13 days');
   assert.equal(bad.status, 2); assert.match(bad.stderr, /the act of Boss/);
   assert.equal(create(BOSS, '[model-cost] AI credit ends in 13 days: add 100 USD').status, 0);
-  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The credit of the tool is low', labels: ['owner:boss'], body: BOSS }).status, 2);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', title: 'The credit of the tool is low', assignees: ['DigitalniHR'], body: BOSS }).status, 2);
 });
 test('a new title in an edit is checked; an edit without a title passes', () => {
   assert.equal(run('Bash', { command: 'gh issue edit 5 -R a/b --title "Accesses agents need"' }).status, 2);
@@ -327,7 +332,7 @@ test('cat <<EOF > path and --body "$(cat path)" pass', () => {
 });
 test('an incomplete body written in the same command is blocked', () => {
   const r = run('Bash', { command: `cat > /tmp/if-none/new.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file /tmp/if-none/new.md` });
-  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when, Owner/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: What and why, Done when\./);
 });
 test('the here-doc wins over an older file on the disk', () => {
   const r = run('Bash', { command: `cat > good.md <<'EOF'\nObjective: x\nEOF\ngh issue create -R a/b ${T} --body-file good.md` });

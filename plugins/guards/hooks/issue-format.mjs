@@ -1,8 +1,10 @@
 // PreToolUse hook: a new GitHub issue names its end state for Boss (Boss, 8 Nov 2026, system#122: 96 of 213 open
 // issues had a "Done when" line; work was closed half done). Blocks (exit 2) `gh issue create` and the GitHub MCP
 // issue_write create when the body does not have the lite form (missing): What and why, Done when with the proof in
-// each line, Owner. A comment or an edit is not a new piece of work and is not checked for the form.
-// An issue with "Owner: Boss" also has Boss decides, Options and Recommendation with "With no answer in 7 days:" (bossMissing).
+// each line. Who acts next is the assignee, not a body line (system#526). A comment or an edit is not checked for the form.
+// An issue where Boss decides (a "Boss decides:" block, the class line "Owner: Boss (<class>)" or the assignee DigitalniHR)
+// also has Boss decides, Options and Recommendation with "With no answer in 7 days:" (bossMissing). Only agents pass
+// this hook: Boss on the GitHub web or app is never blocked.
 // An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
 // The title of a new or renamed issue is a plain sentence, and for a Boss issue it names his act (titleUnclear).
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
@@ -44,8 +46,14 @@ function bossAct(text) {
   const after = text.includes(': ') ? text.slice(text.lastIndexOf(': ') + 2) : '';
   return (after.match(/[\p{L}\p{N}]+/gu) || []).length >= 2;
 }
-export function bossOwned(body, command = '') {
-  return /^\W*owner\s*:\W*boss\b/im.test(String(body || '')) || /(?:--label|-l)[ =]["']?[^"'\s]*owner:boss\b/.test(String(command));
+// An issue where Boss decides: its body asks him ("Boss decides:"), names the class ("Owner: Boss (<class>)"), or the
+// command assigns it to Boss (gh --assignee / -a DigitalniHR; system#526: the assignee is who acts next).
+export const BOSS_LOGIN = process.env.BOSS_LOGIN || 'DigitalniHR';
+export function bossOwned(body, command = '', assignees = []) {
+  const b = String(body || '');
+  return /^\W*boss decides\s*:/im.test(b) || /^\W*owner\s*:\W*boss\s*\(/im.test(b)
+    || new RegExp(`(?:--assignee|-a)[ =]["']?[^"'\\s]*\\b${BOSS_LOGIN}\\b`).test(String(command))
+    || (assignees || []).includes(BOSS_LOGIN);
 }
 // The repository of a `gh issue create`: its -R/--repo flag, else the origin remote of the working folder; null if unknown.
 export function repoOf(command, cwd) {
@@ -59,9 +67,10 @@ export function repoOf(command, cwd) {
 }
 
 // The lite form of every issue (Boss approved it on 13 Nov 2026, system#479; standards/evals.md): What and why, Done
-// when with the proof in each line, Owner; an issue where Boss decides also has Boss decides, Options, Recommendation.
-export const TEMPLATE = '**What and why:** <1 to 3 sentences in business words; each internal term with its meaning>\n\n**Done when:**\n1. <a result Boss or a customer sees, true or false>. Proof: <the check, and where to open it>.\n(1 to 5 lines)\n\n**Owner:** <who acts next and the first act: "Agent: the engineer of this repository takes it and first ..." or "Boss (<class>): he answers on this page with a thumbs-up or the number of an option">\n\n## Details (for agents)\n<optional: steps, links, times, markers>';
-export const RULE = 'a new issue has the lite form: "What and why:" opens it (1 to 3 sentences in business words), "Done when:" is a list of 1 to 5 results, each true or false, checkable when the work ends (no time window such as "for two weeks"), in Boss words (no code, file or "merged/PR/tests" words) and each with its check after "Proof:" in the same line, and "Owner:" names who acts next and the first act; detail only an agent needs goes under "## Details (for agents)" (template and examples: system standards/evals.md)';
+// when with the proof in each line; an issue where Boss decides also has Boss decides, Options, Recommendation and the
+// class line "Owner: Boss (<class>)". The assignee says who acts next (system#526).
+export const TEMPLATE = '**What and why:** <1 to 3 sentences in business words; each internal term with its meaning>\n\n**Done when:**\n1. <a result Boss or a customer sees, true or false>. Proof: <the check, and where to open it>.\n(1 to 5 lines)\n\n(assign it: --assignee Agent-digihr for agent work, --assignee DigitalniHR where Boss decides)\n\n## Details (for agents)\n<optional: steps, links, times, markers>';
+export const RULE = 'a new issue has the lite form: "What and why:" opens it (1 to 3 sentences in business words), "Done when:" is a list of 1 to 5 results, each true or false, checkable when the work ends (no time window such as "for two weeks"), in Boss words (no code, file or "merged/PR/tests" words) and each with its check after "Proof:" in the same line; the assignee (one: Agent-digihr or DigitalniHR) says who acts next; detail only an agent needs goes under "## Details (for agents)" (template and examples: system standards/evals.md)';
 
 // The Done when section: its first line and the lines under it, to a heading or the next key line ("Owner:", ...).
 // Blank lines right after the heading are skipped; a blank line after text ends the section.
@@ -138,14 +147,13 @@ export function missing(body, boss = false) {
     if (WINDOW.test(seen)) out.push(`Done when checkable when the work ends (it has a time window: "${seen.match(WINDOW)[0]}")`);
     for (const [re, what] of TECH) if (re.test(seen)) { out.push(`Done when at Boss level (it has ${what}: "${seen.match(re)[0]}"; the technical check goes after "Proof:")`); break; }
   }
-  if (!/^\W*owner\s*:\W*\S/im.test(b)) out.push('Owner');
   return out;
 }
 
 // The part for Boss of an issue where he decides (Boss, 13 Nov 2026, on dhr#34: "I do not understand it at all"):
 // Boss decides, Options (2 or 3), Recommendation (one concrete answer, never the choice again, and what happens with
 // no answer in 7 days, so the engineer can apply it: system#59).
-export const BOSS_RULE = 'an issue where Boss decides ("Owner: Boss (<class>)") also has, in plain business words: "Boss decides:" (the one question), "Options:" (a list of 2 or 3, each with what it causes) and "Recommendation:" (ONE concrete answer first, with its value, then the reason: "Option 2: add 100 USD, because ..."; never "decide A or B" or "set X"), which ends with "With no answer in 7 days: <what happens>"; template and examples: system standards/evals.md';
+export const BOSS_RULE = 'an issue where Boss decides (assigned to DigitalniHR, or "Boss decides:" in the body) also has, in plain business words: "Boss decides:" (the one question), "Options:" (a list of 2 or 3, each with what it causes) and "Recommendation:" (ONE concrete answer first, with its value, then the reason: "Option 2: add 100 USD, because ..."; never "decide A or B" or "set X"), which ends with "With no answer in 7 days: <what happens>"; template and examples: system standards/evals.md';
 const BOSS_KEYS = ['Boss decides', 'Options', 'Recommendation'];
 // A recommendation that hands the choice back to Boss: its first clause (to the first ".", ":", ";", "(" or "because")
 // offers two things ("A or B"), starts with a word of choice, or says "set X" with no value.
@@ -290,6 +298,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       // Only a real call counts (8 Nov 2026): a here-doc body and text in quotes (a comment that names the command) are data.
       const { commandText } = await import('./forbidden-patterns.mjs');
       const bare = commandText(command).replace(/"(?:[^"\\]|\\.)*"|'[^']*'/gs, '""');
+      if (/(?:^|\s)(?:--help|-h)(?:\s|$)/.test(bare) || /\bgh\s+help\b/.test(bare)) process.exit(0);   // help prints, creates nothing
       const create = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+create\b/.test(bare);
       const edit = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+edit\b/.test(bare);
       if (!create && !edit) process.exit(0);
@@ -319,7 +328,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       body = input.tool_input?.body;
       title = input.tool_input?.title;
       repo = input.tool_input?.owner && input.tool_input?.repo ? `${input.tool_input.owner}/${input.tool_input.repo}` : null;
-      boss = bossOwned(body) || (input.tool_input?.labels || []).includes('owner:boss');
+      boss = bossOwned(body, '', input.tool_input?.assignees || []);
     } else process.exit(0);
     if (titleMissing(repo, title)) {
       console.error(`Blocked: an issue of ${repo} names its objective or initiative first in the title: [<AREA>.<objective>] or [<AREA>-n], for example "[SYS.2] ...". Find the code in the roadmap of the repository and create the issue again.`);
