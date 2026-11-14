@@ -1,0 +1,26 @@
+{
+  "about": "The one list of GitHub labels of the 4 repositories (standards/github.md, section Labels; system#508, system#515). bin/labels_sync.py makes each repository hold `canonical`; hook label-guard.mjs blocks a label write of a name that is not in `canonical`, `families` or `defaults`, and every write of an `old` name.",
+  "canonical": [
+    { "name": "in-progress", "color": "fbca04", "description": "An agent works this issue now; the queue skips it" },
+    { "name": "status:review", "color": "fbca04", "description": "Merged; an agent re-checks the proof on its Proof date" },
+    { "name": "blocked:access", "color": "d93f0b", "description": "Waits for an access; the line is in Accesses agents need" },
+    { "name": "later", "color": "c5def5", "description": "Waits for another issue first; the engineer does not take it" },
+    { "name": "owner:boss", "color": "fbca04", "description": "Boss decides: the issue waits for his answer" },
+    { "name": "boss:question", "color": "fbca04", "description": "Boss was asked one question; his next answer removes it" },
+    { "name": "auto-fixed", "color": "0e8a16", "description": "Fixed and proved in the run that found it; the issue is the log" },
+    { "name": "auditor", "color": "5319e7", "description": "Opened by an auditor; closes when its check is green" },
+    { "name": "repeat", "color": "b60205", "description": "A closed cause came back: the first fix missed the root cause" },
+    { "name": "memory", "color": "c5def5", "description": "A record, not work: the engineer queue skips it" },
+    { "name": "engineer:mac", "color": "1d76db", "description": "Claimed by the Mac per-issue engineer" },
+    { "name": "engineer:cloud", "color": "5319e7", "description": "Claimed by the cloud per-issue engineer" },
+    { "name": "engineer:mac-needed", "color": "fbca04", "description": "The cloud engineer hands the issue to the Mac" },
+    { "name": "engineer:skip", "color": "cccccc", "description": "Sorter: not work for an engineer" },
+    { "name": "priority:1", "color": "b60205", "description": "First in the engineer queue of its repository" },
+    { "name": "priority:2", "color": "d93f0b", "description": "Second in the engineer queue of its repository" },
+    { "name": "priority:3", "color": "fbca04", "description": "Third in the engineer queue of its repository" },
+    { "name": "duplicate", "color": "cfd3d7", "description": "This issue already exists; closed with the link" }
+  ],
+  "families": ["chapter:*", "obj:*", "part:*", "client:*", "small", "large", "seo-audit"],
+  "defaults": ["bug", "documentation", "enhancement", "good first issue", "help wanted", "invalid", "question", "wontfix"],
+  "old": { "status:in-progress": "in-progress", "review": "status:review" }
+}
