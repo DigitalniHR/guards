@@ -107,6 +107,22 @@ test('a closed PR of the same head that is not merged stays blocked (system#293)
 test('a branch with no merged PR stays blocked (system#291)', () => {
   assert.equal(run(`${DEL} wip`, repo, []).status, 2);
 });
+// system#516: a command that merges and then deletes is judged before the merge; an open PR of the same head is the proof.
+test('merge then delete in one command: an open PR of the same head passes (system#516)', () => {
+  fs.rmSync(ghLog, { force: true });
+  assert.equal(run(`gh pr merge 7 --squash --delete-branch 2>&1 | tail -2; ${DEL} sq2`, repo, [{ state: 'open', merged_at: null, head: { sha: sq2tip } }]).status, 0);
+  assert.match(fs.readFileSync(ghLog, 'utf8'), /pulls\?state=open&per_page=100&head=[^&]+%3Asq2$/m);
+  assert.equal(run(`bash engineers/safe_merge.sh system 7 && ${DEL} sq2`, repo, [{ state: 'open', merged_at: null, head: { sha: sq2tip } }]).status, 0);
+});
+test('an open PR of the same head with no merge step before the delete stays blocked (system#516)', () => {
+  assert.equal(run(`${DEL} sq2`, repo, [{ state: 'open', merged_at: null, head: { sha: sq2tip } }]).status, 2);
+  assert.equal(run(`${DEL} sq2; gh pr merge 7 --squash`, repo, [{ state: 'open', merged_at: null, head: { sha: sq2tip } }]).status, 2);
+});
+test('merge then delete: a closed unmerged PR, no PR, or an open PR of another head stays blocked (system#516)', () => {
+  assert.equal(run(`gh pr merge 7 --squash; ${DEL} sq2`, repo, [{ state: 'closed', merged_at: null, head: { sha: sq2tip } }]).status, 2);
+  assert.equal(run(`gh pr merge 7 --squash; ${DEL} wip`, repo, []).status, 2);
+  assert.equal(run(`gh pr merge 7 --squash; ${DEL} sq2`, repo, [{ state: 'open', merged_at: null, head: { sha: 'f'.repeat(40) } }]).status, 2);
+});
 test('a branch with later work than its merged PR stays blocked (system#291)', () => {
   git('checkout', '-q', 'sq2'); fs.writeFileSync(path.join(repo, 'e.txt'), 'e2'); git('commit', '-q', '-am', 'e2'); git('checkout', '-q', 'main');
   const r = run(`${DEL} sq2`, repo, [{ merged_at: '2026-11-10T22:00:00Z', head: { sha: sq2tip } }]); assert.equal(r.status, 2); assert.match(r.stderr, /\(sq2\)/);

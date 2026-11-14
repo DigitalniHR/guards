@@ -47,6 +47,7 @@ try {
       // GitHub is the proof: a merged PR of that branch whose head is the local tip. Later work, no PR or an error blocks.
       // The REST route, not `gh pr list` (GraphQL): the cloud sessions get 403 on GraphQL (system#293). The owner and the
       // repository come from the origin URL (github.com, ssh or the cloud git proxy), not from a gh lookup.
+      const mergesFirst = /\b(gh\s+pr\s+merge|safe_merge\.sh)\b[\s\S]*\bbranch\b[^\n;&|]*?\s-[a-zA-Z]*D\b/.test(command);
       const onGitHub = (n) => {
         try {
           const m = git('remote', 'get-url', 'origin').match(/([^/:]+)\/([^/]+?)(?:\.git)?\/?$/);
@@ -55,7 +56,14 @@ try {
           const prs = JSON.parse(execFileSync(process.env.FORBIDDEN_GH || 'gh', ['api', route],
             { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 }));
           const tip = git('rev-parse', `refs/heads/${n}`);
-          return Array.isArray(prs) && prs.some((p) => p.merged_at && p.head?.sha === tip);
+          if (Array.isArray(prs) && prs.some((p) => p.merged_at && p.head?.sha === tip)) return true;
+          // A command that merges and then deletes is judged before its merge runs (system#516: 8 refusals in 24 h).
+          // With a merge step before the delete, an open PR whose head is the local tip is the proof: every local
+          // commit is on GitHub in that PR, merged or not. Without a merge step an open PR does not pass.
+          if (!mergesFirst) return false;
+          const open = JSON.parse(execFileSync(process.env.FORBIDDEN_GH || 'gh', ['api', route.replace('state=closed', 'state=open')],
+            { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 }));
+          return Array.isArray(open) && open.some((p) => p.state === 'open' && p.head?.sha === tip);
         } catch { return false; }
       };
       if (unmerged.length && !noRepo) unmerged = unmerged.filter((n) => !onGitHub(n));
