@@ -196,7 +196,7 @@ export function bossMissing(body, boss = false) {
 
 // A public-content approval shows the full final text, not a summary or links (Boss, 11 Nov 2026; standard
 // studio content/README.md, Drafts and approval; dhr#893, #904, #758, #880, #473 named only a summary and links to comments and previews).
-export const TEXT_RULE = 'an issue with "Owner: Boss (public content)" shows the full final text of each item under a heading "## Full text" (current and new side by side where text is replaced), or names its piece file in a line "Draft: content/<brand>/<type>/<slug>/7-FINAL.md", or has one line "Approval page: <https link>" to the Boss page that shows all full texts and lets Boss edit them; a summary, the first lines or links to comments are not enough (rule: studio content/README.md, section "Drafts and approval")';
+export const TEXT_RULE = 'an issue with "Owner: Boss (public content)" shows the full final text of each item under a heading "## Full text" (current and new side by side where text is replaced), or names its piece file in a line "Draft: content/<brand>/<type>/<slug>/6-FINAL.md", or has one line "Approval page: <https link>" to the Boss page that shows all full texts and lets Boss edit them; a summary, the first lines or links to comments are not enough (rule: studio content/README.md, section "Drafts and approval")';
 export function textMissing(body) {
   const b = String(body || '');
   if (!/^\W*owner\s*:\W*boss\s*\(\s*public content\b/im.test(b)) return false;

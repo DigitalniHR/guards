@@ -200,7 +200,7 @@ test('a public-content Decision with only a summary and links is blocked (dhr#89
   assert.equal(r.status, 2); assert.match(r.stderr, /Full text/);
 });
 test('a public-content Decision that names its piece file passes (studio content/README.md)', () => {
-  const r = run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Draft: `content/dhr/web/homepage-hero/7-FINAL.md`\n' });
+  const r = run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Draft: `content/dhr/web/homepage-hero/6-FINAL.md`\n' });
   assert.equal(r.status, 0);
   assert.equal(run('mcp__github__issue_write', { method: 'create', title: DEC, body: PC + 'Draft: see the chat\n' }).status, 2);
 });
