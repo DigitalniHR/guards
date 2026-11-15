@@ -34,3 +34,25 @@ test('block: open steps are still reported first (unchanged)', () => {
   const out = JSON.parse(run({ goal: open, last: 'Done: https://x' }));
   assert.match(out.reason, /open step/);
 });
+// system#620: a promise to read may start the work, never end it; a system change reports "Parts: N -> M"; an audit
+// gives the map and the delete list.
+const real = done.replace('Design: mechanical: one line', 'Design: change goal-stop; parts 5 -> 5');
+const ok = 'Done: PR https://github.com/DigitalniHR/system/pull/1 merged. Parts: 5 -> 5. Boss acts: none.';
+test('block: Exists still holds "not yet read" at the end of the turn', () => {
+  const out = JSON.parse(run({ goal: real.replace('Exists: none found: rg y', 'Exists: not yet read; to read: content-creation/README.md'), last: ok }));
+  assert.match(out.reason, /Exists \(it still holds a promise to read/);
+});
+test('block: a design with no count of parts', () => {
+  const out = JSON.parse(run({ goal: real.replace('; parts 5 -> 5', ''), last: ok }));
+  assert.match(out.reason, /Design \(no count of parts/);
+});
+test('block: a system change whose last message has no "Parts: N -> M"', () => {
+  const out = JSON.parse(run({ goal: real, last: 'Done: PR https://github.com/DigitalniHR/system/pull/1 merged.' }));
+  assert.match(out.reason, /no line "Parts: N -> M"/);
+});
+test('allow: a system change with the parts line', () => { assert.equal(run({ goal: real, last: ok }), ''); });
+test('block: an audit with no delete list; allow with it', () => {
+  const audit = real.replace('Said: fix x', 'Said: audit of the worker');
+  assert.match(JSON.parse(run({ goal: audit, last: ok })).reason, /delete list/);
+  assert.equal(run({ goal: audit, last: `${ok} Map: 5 parts. Delete list: none.` }), '');
+});

@@ -44,6 +44,11 @@ else {
   const asksAct = /\b(klikni|povol|schval|potvrď|nastav|otevři|přihlas|zadej|allow|click|approve|grant|sign in)\b/i.test(last);
   if (g.open.length && !g.decision) why = `the goal file has ${g.open.length} open step(s): ${g.open.map(s => `"${s}"`).join(', ')}. Finish them with proof, or write the one Boss-only decision that blocks them under "## Boss-only decision".`;
   else if (asksAct && /^none$/i.test(g['Boss acts'] || '')) why = `the last message asks Boss for an act, but the goal file says "Boss acts: none". Try the automatic route first (scripts, Terminal control, the memory of this machine). If Boss must act, list every act with the minutes under "Boss acts:", then ask once.`;
+  // The whole first and the count of parts (system#618, system#620): a promise to read may start the work, never end it;
+  // the report of a change of a system gives "Parts: N -> M"; an audit gives Boss the map of parts and the delete list.
+  else if (Object.keys(g.unfinished).length) why = `the goal file ${f.goal} still has: ${Object.entries(g.unfinished).map(([k, v]) => `${k} (${v})`).join(', ')}. Complete it from what you read, then end.`;
+  else if (!/^mechanical:/i.test(g.Design || '') && !/\bParts:?\s*\d+\s*(->|→)\s*\d+/i.test(last)) why = `the last message has no line "Parts: N -> M" (the count of parts before and after, as in "Design:" of the goal file). Add it, so Boss sees that the system stayed lean.`;
+  else if (/\baudit/i.test(`${g.Said || ''} ${g.Wants || ''}`) && !/\bdelete list\b/i.test(last)) why = `this task is an audit, but the last message has no map of parts and no delete list. Give the map of the parts (each with the reader of its output) and the delete list first.`;
   // Boss asked "hotovo?" 7 times in 24 h (CAO, 10 Nov 2026): a turn whose steps are all done ends with the result
   // stated, not left for Boss to ask: done or not done, the proof (a link or a path), and what Boss must do, if anything.
   else if (!g.open.length && !g.waiting.length && !g.decision && !RESULT.test(last)) why = `every step of the goal file is done, but the last message does not say the result. End with the result first: done or not done, the proof (a link or a path) and "Boss acts: none" or the list, so Boss never has to ask "hotovo?".`;
