@@ -1,7 +1,7 @@
 // Notification (permission_prompt) and StopFailure hook: appends one JSON line per
 // stall or failed turn to ~/.claude/logs/session-events.jsonl, so a routine that
 // waits for an approval or dies on an API error at night is visible next morning.
-// The CTO routines read this log by `unit`. Never blocks; output is ignored by Claude Code.
+// The officers read this log by `unit`. Never blocks; output is ignored by Claude Code.
 // unit: the repository of the run (dhr, jobboard, studio, system, ...). An app routine names it in its task name
 // (dhr-engineer runs in the system checkout; a routine without a folder runs in a scratch workspace), so the name
 // of the scheduled task in the first prompt of the transcript wins over the folder (system#465).
