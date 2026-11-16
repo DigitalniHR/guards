@@ -3,10 +3,12 @@
 // not after the environment cache expires (CCO review, 8 Nov 2026). On the Mac bin/checkout_sync.sh --hook keeps the files current,
 // but a new guard in hooks.json is not in the settings until install.mjs runs (system#169): when a hook of
 // hooks.json is missing from the settings, it installs again. It installs again too when the settings hold a guard
-// that hooks.json no longer has (system#668: a removed guard with onFailure block stopped every command on the Mac);
+// that hooks.json no longer has (system#668: a removed guard with onFailure block stopped every command on the Mac),
+// and when the claudeMdExcludes of excludes.mjs differ (system#673);
 // bin/checkout_sync.sh runs this file after a pull, so the settings follow the files in the same step. Never blocks a session start.
 import { execFileSync } from 'node:child_process'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withExcludes } from '../excludes.mjs';
 
 // The hook commands of hooks.json (with the hooks dir) that the settings text does not hold.
 export function missing(hooksJson, settingsText, dir) {
@@ -34,7 +36,9 @@ try {
     const target = process.env.GUARDS_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
     let text = ''; try { text = fs.readFileSync(target, 'utf8'); } catch { /* no settings yet: install makes them */ }
     const hj = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'));
-    if (missing(hj, text, dir).length || stale(hj, text, dir).length) {
+    let set = {}; try { set = JSON.parse(text); } catch { /* install writes it new */ }
+    const excl = JSON.stringify(withExcludes(set, path.dirname(target)).claudeMdExcludes) !== JSON.stringify(set.claudeMdExcludes);   // system#673
+    if (missing(hj, text, dir).length || stale(hj, text, dir).length || excl) {
       execFileSync('node', [path.join(dir, '..', 'install.mjs'), target, dir], { stdio: 'ignore', timeout: 20000 });
     }
   }

@@ -6,6 +6,7 @@
 // Usage: node install.mjs <settings.json> [hooks dir]   (also bin/install_guards.mjs in DigitalniHR/system; the public copy
 // DigitalniHR/guards has this file at its root, so a cloud session without the system repository installs it too)
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import { withExcludes } from './excludes.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const target = process.argv[2];
@@ -25,6 +26,7 @@ for (const [ev, groups] of Object.entries(plugin)) {
   hooks[ev] = [...(hooks[ev] || []), ...fixed];
 }
 settings.hooks = hooks;
+settings = withExcludes(settings, path.dirname(path.resolve(target)));   // the global rules load one time (system#673)
 fs.mkdirSync(path.dirname(target), { recursive: true });
 fs.writeFileSync(target, JSON.stringify(settings, null, 2) + '\n');
 console.log(`guards: ${Object.values(plugin).flat().length} hook groups installed into ${target} from ${dir}`);

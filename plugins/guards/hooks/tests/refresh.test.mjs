@@ -40,3 +40,16 @@ test('a guard removed from hooks.json leaves the settings (system#668)', () => {
   assert.doesNotMatch(text, /merge-gate/); assert.match(text, /echo own/); assert.match(text, /goal-gate\.mjs/);
   assert.deepEqual(stale(hj, text, dir), []);
 });
+test('a symlinked user CLAUDE.md gets the worktree excludes; no link gets none (system#673)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
+  fs.writeFileSync(s, JSON.stringify({ claudeMdExcludes: ['/own/CLAUDE.md'] }));
+  run(s); assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, ['/own/CLAUDE.md']);
+  fs.mkdirSync(path.join(tmp, 'system')); fs.writeFileSync(path.join(tmp, 'system', 'CLAUDE.md'), 'rules');
+  fs.symlinkSync(path.join(tmp, 'system', 'CLAUDE.md'), path.join(tmp, 'CLAUDE.md'));
+  assert.equal(run(s).status, 0);
+  const want = ['/own/CLAUDE.md', '**/system-*/CLAUDE.md', '**/system/.claude/worktrees/*/CLAUDE.md'];
+  assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, want);
+  run(s); assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, want);   // no double at a second run
+  fs.unlinkSync(path.join(tmp, 'CLAUDE.md')); run(s);
+  assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, ['/own/CLAUDE.md']);
+});

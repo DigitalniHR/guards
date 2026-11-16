@@ -10,4 +10,7 @@ Install into a settings file:
 
 Cloud: the setup script of every environment clones this repository to /opt/guards and runs the same line; if the
 clone fails it installs one hook that blocks every tool ("guards missing"), so a session never runs without guards.
+The installer also sets `claudeMdExcludes` (`excludes.mjs`): when `~/.claude/CLAUDE.md` is a symlink to a checkout (the Mac),
+the copies of that file in the worktrees of the same repository do not load again, so a session reads the global rules
+one time (system#673). With no symlink (the cloud) it sets no pattern.
 The hook refresh.mjs pulls and reinstalls at every session start. So every session in every repository (the Mac once, the cloud by the setup script of each environment) has them; the problem issue template asks for `Cause:` and `Research:` too.
