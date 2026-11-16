@@ -53,3 +53,11 @@ test('a symlinked user CLAUDE.md gets the worktree excludes; no link gets none (
   fs.unlinkSync(path.join(tmp, 'CLAUDE.md')); run(s);
   assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, ['/own/CLAUDE.md']);
 });
+test('the settings get the auto-compact window; a value of the owner stays (system#707)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
+  fs.writeFileSync(s, JSON.stringify({ model: 'opus' }));
+  assert.equal(run(s).status, 0);
+  assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).autoCompactWindow, 200000);
+  fs.writeFileSync(s, JSON.stringify({ ...JSON.parse(fs.readFileSync(s, 'utf8')), autoCompactWindow: 500000 }));
+  run(s); assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).autoCompactWindow, 500000);
+});
