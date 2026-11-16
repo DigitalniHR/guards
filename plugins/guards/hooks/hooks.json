@@ -23,7 +23,7 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*issue_write",
+        "matcher": "Bash|mcp__.*(issue_write|add_issue_comment)",
         "hooks": [
           {
             "type": "command",

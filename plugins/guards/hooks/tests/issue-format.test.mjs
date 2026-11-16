@@ -344,3 +344,23 @@ test('a body file that does not exist and is not written is blocked', () => {
 test('a body file path followed by ; is read without the ;', () => {
   assert.equal(run('Bash', { command: `gh issue create -R a/b ${T} --body-file good.md; echo done` }).status, 0);
 });
+
+// system#204: a Proof date more than 2 days ahead is refused with the reason, in a comment, an edit and a new issue.
+test('a Proof date more than 2 days ahead is refused; today and 2 days ahead pass', async () => {
+  const { proofDateFar } = await import('../issue-format.mjs');
+  const now = new Date(Date.UTC(2026, 10, 16, 23, 0));
+  assert.strictEqual(proofDateFar('Merged.\nProof date: 2026-11-21', now), '2026-11-21');
+  assert.strictEqual(proofDateFar('Proof date: 2026-11-18', now), '');
+  assert.strictEqual(proofDateFar('Proof date: 2026-11-16 and nothing else', now), '');
+  assert.strictEqual(proofDateFar('no date here', now), '');
+  const ahead = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  let r = run('Bash', { command: `gh issue comment 5 -R DigitalniHR/system --body "Merged.\\nProof date: ${ahead}"` });
+  assert.strictEqual(r.status, 2); assert.match(r.stderr, /at most 2 days after today/); assert.match(r.stderr, new RegExp(ahead));
+  r = run('Bash', { command: `gh issue comment 5 -R DigitalniHR/system --body "Merged.\\nProof date: ${soon}"` });
+  assert.strictEqual(r.status, 0, r.stderr);
+  r = run('mcp__github__add_issue_comment', { owner: 'DigitalniHR', repo: 'system', issue_number: 5, body: `Proof date: ${ahead}` });
+  assert.strictEqual(r.status, 2);
+  r = run('Bash', { command: `gh issue edit 5 --body "x\\nProof date: ${ahead}"` });
+  assert.strictEqual(r.status, 2);
+});

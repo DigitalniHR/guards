@@ -7,6 +7,8 @@
 // this hook: Boss on the GitHub web or app is never blocked.
 // An issue with "Owner: Boss (public content)" needs the full text or an approval page (textMissing), also on an edit.
 // The title of a new or renamed issue is a plain sentence, and for a Boss issue it names his act (titleUnclear).
+// A `Proof date:` more than PROOF_DAYS_MAX days ahead is refused in a new issue, an edit and a comment (proofDateFar,
+// system#204): a proof that waits longer is split into a part that can be proved now and the rest.
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -240,6 +242,18 @@ export function writtenInCommand(command, p) {
   return found;
 }
 
+// A `Proof date:` line more than PROOF_DAYS_MAX days after today (UTC) is refused (system#204: 61 dhr review issues had
+// proof dates up to 13 days ahead, so their defects waited unseen). Returns the first far date, or ''.
+export const PROOF_DAYS_MAX = 2;
+export const PROOF_RULE = `a "Proof date:" is at most ${PROOF_DAYS_MAX} days after today: run the proof now, or set the date of the first check that can run (the engineer re-checks it on that day and sets the next date), or split the issue into the part that can be proved now and the rest (engineers/README.md, end state 2; system#204)`;
+export function proofDateFar(body, now = new Date()) {
+  const limit = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + PROOF_DAYS_MAX));
+  for (const m of String(body || '').matchAll(/Proof date:\W*(\d{4})-(\d{2})-(\d{2})/gi)) {
+    if (new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) > limit) return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  return '';
+}
+
 // The body of a `gh issue create` command: --body-file/-F <path> is read, --body/-b "<text>" is taken as written.
 export function bodyOf(command, cwd) {
   // The flag stands alone (not the end of another word); ~ and $VAR / ${VAR} are taken from the environment (system#139).
@@ -305,9 +319,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       if (/(?:^|\s)(?:--help|-h)(?:\s|$)/.test(bare) || /\bgh\s+help\b/.test(bare)) process.exit(0);   // help prints, creates nothing
       const create = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+create\b/.test(bare);
       const edit = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+edit\b/.test(bare);
-      if (!create && !edit) process.exit(0);
+      const comment = /(?:^|[;&|(]\s*|\n\s*)gh\s+(?:issue|pr)\s+comment\b/.test(bare);
+      if (!create && !edit && !comment) process.exit(0);
       body = bodyOf(command, String(input.cwd || process.cwd()));
       if (body === null) process.exit(0);
+      const far = proofDateFar(body);
+      if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
+      if (!create && !edit) process.exit(0);
       const t = command.match(/(?<![\w-])(?:--title|-t)[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/);
       title = t ? (t[1] ?? t[2] ?? t[3]) : '';
       if (title.includes('$')) title = null;   // a shell variable the guard cannot see: do not block on a guess
@@ -319,7 +337,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       }
       boss = bossOwned(body, command);
       repo = repoOf(command, String(input.cwd || process.cwd()));
+    } else if (/add_issue_comment$/.test(tool)) {
+      const far = proofDateFar(input.tool_input?.body);
+      if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
+      process.exit(0);
     } else if (/issue_write$/.test(tool)) {
+      const far = proofDateFar(input.tool_input?.body);
+      if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
       const method = String(input.tool_input?.method || '');
       if (method === 'update' && typeof input.tool_input?.title === 'string') {
         const unclear = titleUnclear(input.tool_input.title, bossOwned(input.tool_input?.body));
