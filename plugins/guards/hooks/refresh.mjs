@@ -2,7 +2,9 @@
 // setup script of the environment) and installs it again, so a guard fix reaches the cloud at the next session start,
 // not after the environment cache expires (CCO review, 8 Nov 2026). On the Mac bin/checkout_sync.sh --hook keeps the files current,
 // but a new guard in hooks.json is not in the settings until install.mjs runs (system#169): when a hook of
-// hooks.json is missing from the settings, it installs again. Never blocks a session start.
+// hooks.json is missing from the settings, it installs again. It installs again too when the settings hold a guard
+// that hooks.json no longer has (system#668: a removed guard with onFailure block stopped every command on the Mac);
+// bin/checkout_sync.sh runs this file after a pull, so the settings follow the files in the same step. Never blocks a session start.
 import { execFileSync } from 'node:child_process'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +13,15 @@ export function missing(hooksJson, settingsText, dir) {
   return Object.values(hooksJson.hooks || {}).flat().flatMap((g) => g.hooks || [])
     .map((h) => String(h.command || '').replaceAll('${CLAUDE_PLUGIN_ROOT}/hooks', dir))
     .filter((c) => !settingsText.includes(JSON.stringify(c).slice(1, -1)));
+}
+
+// The guard commands of the settings (they name the hooks dir) that hooks.json no longer has.
+export function stale(hooksJson, settingsText, dir) {
+  const want = new Set(Object.values(hooksJson.hooks || {}).flat().flatMap((g) => g.hooks || [])
+    .map((h) => String(h.command || '').replaceAll('${CLAUDE_PLUGIN_ROOT}/hooks', dir)));
+  let hooks = {}; try { hooks = JSON.parse(settingsText).hooks || {}; } catch { return []; }
+  return Object.values(hooks).flat().flatMap((g) => g.hooks || []).map((h) => String(h.command || ''))
+    .filter((c) => c.includes(dir + '/') && !want.has(c));
 }
 
 const ROOT = '/opt/guards';
@@ -22,7 +33,8 @@ try {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const target = process.env.GUARDS_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
     let text = ''; try { text = fs.readFileSync(target, 'utf8'); } catch { /* no settings yet: install makes them */ }
-    if (missing(JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8')), text, dir).length) {
+    const hj = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'));
+    if (missing(hj, text, dir).length || stale(hj, text, dir).length) {
       execFileSync('node', [path.join(dir, '..', 'install.mjs'), target, dir], { stdio: 'ignore', timeout: 20000 });
     }
   }

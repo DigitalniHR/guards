@@ -1,7 +1,7 @@
 // node --test hooks/tests/refresh.test.mjs  (system#169: a new guard reaches the Mac settings)
 import test from 'node:test'; import assert from 'node:assert'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
-import { missing } from '../refresh.mjs';
+import { missing, stale } from '../refresh.mjs';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hook = path.join(dir, 'refresh.mjs');
@@ -25,4 +25,18 @@ test('a complete settings file is not written again', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
   run(s); const before = fs.readFileSync(s, 'utf8'); fs.writeFileSync(s, before.replace('\n', '\n ')); // a mark install would remove
   assert.equal(run(s).status, 0); assert.equal(fs.readFileSync(s, 'utf8'), before.replace('\n', '\n '));
+});
+test('a guard removed from hooks.json leaves the settings (system#668)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
+  run(s); const full = JSON.parse(fs.readFileSync(s, 'utf8'));
+  const gone = `node "${dir}/merge-gate.mjs"`;
+  full.hooks.PreToolUse.unshift({ matcher: 'Bash', hooks: [{ type: 'command', command: gone, onFailure: 'block' }] });
+  full.hooks.Stop.unshift({ hooks: [{ type: 'command', command: 'echo own' }] });
+  fs.writeFileSync(s, JSON.stringify(full));
+  const hj = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'));
+  assert.deepEqual(stale(hj, fs.readFileSync(s, 'utf8'), dir), [gone]);
+  assert.equal(run(s).status, 0);
+  const text = fs.readFileSync(s, 'utf8');
+  assert.doesNotMatch(text, /merge-gate/); assert.match(text, /echo own/); assert.match(text, /goal-gate\.mjs/);
+  assert.deepEqual(stale(hj, text, dir), []);
 });
