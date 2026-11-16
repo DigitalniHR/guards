@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'n
 
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'goal-gate.mjs');
 const full = 'Said: fix x\nWants: x works for Boss\nCause: class y\nExists: none found: rg y\nResearch: mechanical: rename a file\nDesign: mechanical: one line\nDone when: page shows y\nProof: test passes\nBoss acts: none\n## Steps\n- [ ] do x\n## Boss-only decision\n';
-// A transcript with `n` tool calls after the last message of Boss.
+// A transcript with `n` tool calls after the last message of Boss; the last one is the call under judgment,
+// as in the real transcript (system#682).
 function transcript(dir, n) {
   const lines = [JSON.stringify({ type: 'user', message: { content: 'do it' } })];
   for (let i = 0; i < n; i++) lines.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash' }] } }));
@@ -23,7 +24,9 @@ function run({ prompt = 'fix x', goal = null, goalNewer = true, calls = 3, targe
 }
 
 test('allow: a complete current goal file', () => { const r = run({ goal: full }); assert.equal(r.status, 0); assert.equal(r.stderr, ''); });
-test('allow: the first calls of a turn are free', () => { assert.equal(run({ calls: 1 }).status, 0); });
+test('allow: the first two calls of a turn are free, the third is refused', () => {
+  assert.equal(run({ calls: 1 }).status, 0); assert.equal(run({ calls: 2 }).status, 0); assert.equal(run({ calls: 3 }).status, 2);
+});
 test('allow: no message of Boss yet', () => { assert.equal(run({ prompt: null }).status, 0); });
 test('allow: an automated turn (routine)', () => { assert.equal(run({ prompt: '<command-name>x</command-name>' }).status, 0); });
 test('allow: writing the goal file itself with no goal', () => { assert.equal(run({ target: 'goal' }).status, 0); });
@@ -37,7 +40,7 @@ test('block: an incomplete goal file names the missing keys', () => {
   assert.match(r.stderr, /incomplete: Cause, Exists, Research, Design, Done when, Proof, Boss acts, Steps/);
 });
 test('Quick goal: passes up to 4 calls, blocks from the 5th', () => {
-  assert.equal(run({ goal: 'Quick: answer\n', calls: 3 }).status, 0);
+  assert.equal(run({ goal: 'Quick: answer\n', calls: 3 }).status, 0); assert.equal(run({ goal: 'Quick: answer\n', calls: 4 }).status, 0);
   const r = run({ goal: 'Quick: answer\n', calls: 5 }); assert.equal(r.status, 2); assert.match(r.stderr, /a "Quick:" goal covers at most 4/);
 });
 test('broken input: empty stdin, bad JSON and no transcript all exit 0 (no message of Boss for session "unknown")', () => {

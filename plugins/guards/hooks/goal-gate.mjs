@@ -8,12 +8,14 @@ const f = files(input.session_id);
 if (isAutomated(read(f.prompt)) || !read(f.prompt)) process.exit(0);   // a routine, or no message of Boss yet
 const target = String((input.tool_input || {}).file_path || '');
 if (target && target === f.goal) process.exit(0);
+// The transcript already holds the call under judgment (and every call sent with it in one message), so the count
+// includes it: call number FREE_CALLS is still free, the next one is refused (system#682).
 const calls = turnCalls(input.transcript_path);
-if (calls < FREE_CALLS) process.exit(0);
+if (calls <= FREE_CALLS) process.exit(0);
 
 const { state, text } = goalState(f);
 let why = '';
-if (state === 'current' && parseGoal(text).quick && calls >= QUICK_CALLS) why = `this turn has made ${calls} tool calls; a "Quick:" goal covers at most ${QUICK_CALLS}. Write the full goal file ${f.goal}, then continue. ${FORMAT}`;
+if (state === 'current' && parseGoal(text).quick && calls > QUICK_CALLS) why = `this turn has made ${calls} tool calls; a "Quick:" goal covers at most ${QUICK_CALLS}. Write the full goal file ${f.goal}, then continue. ${FORMAT}`;
 else if (state === 'missing') why = `the goal file ${f.goal} does not exist. Write it now, then continue. ${FORMAT}`;
 else if (state === 'stale') why = `Boss sent a new message after the goal file ${f.goal} was last written. Read it, update it or confirm it unchanged (touch it), then continue.`;
 else {
