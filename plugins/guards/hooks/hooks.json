@@ -23,16 +23,6 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*merge_pull_request",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/merge-gate.mjs\"",
-            "onFailure": "block"
-          }
-        ]
-      },
-      {
         "matcher": "Bash|mcp__.*issue_write",
         "hooks": [
           {

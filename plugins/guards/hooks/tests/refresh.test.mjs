@@ -18,7 +18,7 @@ test('on the Mac a settings file without a guard gets every guard', () => {
   fs.writeFileSync(s, JSON.stringify({ model: 'x', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo own' }] }] } }));
   assert.equal(run(s).status, 0);
   const text = fs.readFileSync(s, 'utf8');
-  assert.match(text, /merge-gate\.mjs/); assert.match(text, /echo own/); assert.match(text, /"model": "x"/);
+  assert.match(text, /issue-format\.mjs/); assert.match(text, /echo own/); assert.match(text, /"model": "x"/);
   assert.deepEqual(missing(JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8')), text, dir), []);
 });
 test('a complete settings file is not written again', () => {
