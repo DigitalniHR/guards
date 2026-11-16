@@ -46,6 +46,6 @@ test('broken input: empty stdin, bad JSON and no transcript all exit 0 (no messa
 test('broken input: a missing transcript file counts zero calls and passes', () => {
   const r = run({ stdin: JSON.stringify({ session_id: 's1', transcript_path: '/nonexistent/t.jsonl' }) }); assert.equal(r.status, 0);
 });
-test('allow: a promise to read in Exists may start the work (the end of the turn refuses it, system#620)', () => {
+test('allow: a promise to read in Exists may start the work (system#620)', () => {
   const r = run({ goal: full.replace('Exists: none found: rg y', 'Exists: not yet read; to read: workers/x/README.md') }); assert.equal(r.status, 0); assert.equal(r.stderr, '');
 });

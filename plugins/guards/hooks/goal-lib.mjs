@@ -6,7 +6,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 
 export const DIR = path.join(os.homedir(), '.claude', 'goals');
 export const FREE_CALLS = 2;   // tool calls a turn may make before the goal file must be current (a look around)
-export const MAX_BLOCKS = 2;   // refusals of one turn's end; after that the turn may end (no endless loop)
+export const MAX_BLOCKS = 1;   // refusals of a turn end per message of Boss: one forced rewrite at most (system#670)
 export const MAX_GOAL_REPROMPTS = 10; // re-prompts of a /goal Stop condition before the session may end (system#23)
 export const QUICK_CALLS = 4;  // a "Quick:" goal covers a turn of at most this many tool calls; more needs the full form
 
@@ -21,11 +21,6 @@ export function read(file) { try { return fs.readFileSync(file, 'utf8'); } catch
 
 // A routine or an automated turn (a skill body, a cross-session message, a hook feedback) is not a task of Boss.
 export function isAutomated(promptText) { return /^\s*(Base directory for this skill|<|\[Request interrupted|Stop hook feedback|Your response above was cut off)/.test(String(promptText || '')); }
-
-// A promise in place of the result: "not yet read", "to read: ...", "to fill", "to update", "TBD", "TODO".
-export const PLACEHOLDER = /\b(not (yet )?read\b|not yet (known|checked|filled)\b|to (be )?read\b|to (be )?fill(ed)?\b|to update\s*(\.|$|after)|tbd\b|todo\b)/im;
-// A count of parts before and after: "parts 5 -> 4", "Parts: 5 → 4", "parts before -> after: 5 -> 4".
-export const PARTS = /\bparts?\b[^\n]*?\b\d+\s*(->|→)\s*\d+\b/i;
 
 // The goal file: a `Quick:` line for a question or a handful of tool calls, else the full form.
 export function parseGoal(text) {
@@ -47,13 +42,6 @@ export function parseGoal(text) {
   // A source named in words (documentation, a skill, a guide, an issue) is a source: 19 of 23 refusals in 24 h named
   // one; a line that only promises to read later is not (system#397).
   if (g.Research && !/^mechanical:\s*\S/i.test(g.Research) && (/^to (be )?fill/i.test(g.Research) || !/(https?:\/\/|\.md\b|standard|#\d+|\b(docs?|documentation|manual|guide|reference|book|paper|skill|issue|sourced?|sources|readme)\b)/i.test(g.Research))) g.missing.Research = 'name the standard file or the sources read, or "mechanical: <why no research>"';
-  // The whole first, delete before add (system#618): the goal file is due before the 3rd call, so `Exists:` may hold a
-  // promise to read at the start; the end of the turn needs the parts read and the count before -> after (system#620).
-  g.unfinished = {};
-  if (g.Exists && PLACEHOLDER.test(g.Exists)) g.unfinished.Exists = 'it still holds a promise to read; write the parts read and their count';
-  if (g.Research && PLACEHOLDER.test(g.Research)) g.unfinished.Research = 'it still holds a promise to read; name the sources read';
-  if (g.Design && PLACEHOLDER.test(g.Design)) g.unfinished.Design = 'it still holds a promise to fill; write the design';
-  else if (g.Design && !/^mechanical:\s*\S/i.test(g.Design) && !PARTS.test(g.Design)) g.unfinished.Design = 'no count of parts; write "parts N -> M" (files, scripts, prompts, checks), or "mechanical: <why>"';
   g.open = [...text.matchAll(/^- \[ \] (.+)$/gm)].map(m => m[1].trim());
   // A step that waits for sessions this one started: "- [~] <step> — waits for local_<id>[, local_<id>]" (system#302).
   g.waiting = [...text.matchAll(/^- \[~\] (.+)$/gm)].map(m => ({ step: m[1].trim(), sessions: [...m[1].matchAll(/\blocal_[0-9a-f-]{4,}/gi)].map(x => x[0].toLowerCase()) }));
@@ -107,9 +95,9 @@ export const FORMAT = `Goal file format (Markdown, English, STE):
 Said: <what Boss wrote, one line>
 Wants: <the intent behind it: the higher goal, what he will do with the result; never the same as Said>
 Cause: class: <the class of problem this case is a sign of>; case: <this case>. The fix solves the class, never a rule for one case
-Exists: <the whole first: the parts that serve this goal today and were read, their count (a promise to read may stand at the start; the end of the turn refuses it), each part with no reader of its output, why the whole fails the need now; or "none found: <the search>">
+Exists: <the whole first: the parts that serve this goal today and were read, their count, each part with no reader of its output, why the whole fails the need now; or "none found: <the search>">
 Research: <the standard file read or written, or the sources of best practice read before the solution; or "mechanical: <why no research>">
-Design: <the one design, in this order: delete, change or merge what exists, add last; an added part names the part it replaces or why no existing part can do the job; "parts N -> M" (the end of the turn refuses a design with no count); one other design in a few words and why not; a task that pays for model calls above 2 USD names the amount and why here (standards/model-choice.md); or "mechanical: <why>">
+Design: <the one design, in this order: delete, change or merge what exists, add last; an added part names the part it replaces or why no existing part can do the job; "parts N -> M"; one other design in a few words and why not; a task that pays for model calls above 2 USD names the amount and why here (standards/model-choice.md); or "mechanical: <why>">
 Done when: <3 to 8 criteria, each true or false and checkable now, as Boss sees it; then "Not done when:" the likely half-done state (standards/evals.md)>
 Proof: <the check that shows the end state: a test, a listing, a page opened, a count before and after>
 Boss acts: none | <every click, permission or approval Boss must do, in one list, with the minutes, asked once>
@@ -117,7 +105,7 @@ Boss acts: none | <every click, permission or approval Boss must do, in one list
 - [ ] <step> (mark done as "- [x] <step> — <proof>"; a step that waits for a session you started: "- [~] <step> — waits for local_<id>")
 ## Boss-only decision
 <empty, or the one decision (money, data loss, public content, his accounts, direction) that blocks the end state>
-Final message: the result first; a change of a system has one line "Parts: N -> M"; an audit gives the map of parts and the delete list.
+The turn ends only when every step is done or marked "- [~] <step> — waits for <what>", or a Boss-only decision blocks it.
 A question or a turn of at most ${QUICK_CALLS} tool calls needs only one line: "Quick: <what>".`;
 
 // A /goal Stop condition is judged by the harness after every turn; a condition with no testable end re-prompted one
