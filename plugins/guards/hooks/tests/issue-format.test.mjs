@@ -3,9 +3,10 @@ import test from 'node:test'; import assert from 'node:assert'; import fs from '
 import { bossMissing, recommendationVague, missing, results, doneWhen } from '../issue-format.mjs';
 import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 
+process.env.ISSUE_SEARCH_STUB = '';   // GitHub is never called in a test: each case sets a stub file
 const hook = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'issue-format.mjs');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'if-'));
-const run = (tool_name, tool_input) => spawnSync('node', [hook], { input: JSON.stringify({ tool_name, tool_input, cwd: tmp }), encoding: 'utf8' });
+const run = (tool_name, tool_input, env = {}) => spawnSync('node', [hook], { input: JSON.stringify({ tool_name, tool_input, cwd: tmp }), encoding: 'utf8', env: { ...process.env, ...env } });
 const cli = (args, input) => spawnSync('node', [hook, ...args], { input, encoding: 'utf8' });
 const inline = (body) => body.replace(/\n/g, '\\n');   // the body as a bash --body "..." argument
 
@@ -363,4 +364,68 @@ test('a Proof date more than 2 days ahead is refused; today and 2 days ahead pas
   assert.strictEqual(r.status, 2);
   r = run('Bash', { command: `gh issue edit 5 --body "x\\nProof date: ${ahead}"` });
   assert.strictEqual(r.status, 2);
+});
+
+// system#736: the REST create gets the form check, and a new issue that repeats an open or recently closed one is refused.
+const stub = (name, content) => { const f = path.join(tmp, name); fs.writeFileSync(f, typeof content === 'string' ? content : JSON.stringify(content)); return { ISSUE_SEARCH_STUB: f }; };
+const NONE = stub('none.json', []);
+const rest = (body, title = 'GitHub Actions jobs do not start because payment failed', env = NONE, extra = '') =>
+  run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="${title}" -f body="${inline(body)}" -f 'assignees[]=Agent-digihr' ${extra}` }, env);
+const DAYS = (n) => new Date(Date.now() - n * 86400000).toISOString();
+
+test('(a) a REST create with a body that lacks Done when is blocked; a complete one passes', () => {
+  const r = rest(`${WHY}\n\n${AGENT}\n`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Done when/);
+  assert.equal(rest(good).status, 0);
+  assert.equal(run('Bash', { command: `gh api --method POST "repos/DigitalniHR/jobboard/issues" -f title="The page shows the new number" -F body=@${path.join(tmp, 'bad.md')}` }, NONE).status, 2);
+  assert.equal(run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="The page shows the new number" -F body=@${path.join(tmp, 'good.md')}` }, NONE).status, 0);
+});
+test('a REST create with --input is read from the JSON file', () => {
+  fs.writeFileSync(path.join(tmp, 'bad.json'), JSON.stringify({ title: 'The page shows the new number', body: 'no form' }));
+  fs.writeFileSync(path.join(tmp, 'good.json'), JSON.stringify({ title: 'The page shows the new number', body: good }));
+  assert.equal(run('Bash', { command: 'gh api -X POST repos/a/b/issues --input bad.json' }, NONE).status, 2);
+  assert.equal(run('Bash', { command: `gh api -X POST repos/a/b/issues --input ${path.join(tmp, 'good.json')}` }, NONE).status, 0);
+});
+test('other REST calls pass: a comment, a label, a sub-issue, a read, an edit', () => {
+  for (const c of ['gh api -X POST repos/a/b/issues/5/comments -f body=x', 'gh api -X POST repos/a/b/issues/5/labels -f "labels[]=x"',
+    'gh api -X POST repos/a/b/issues/5/sub_issues -F sub_issue_id=9', 'gh api repos/a/b/issues', 'gh api -X GET repos/a/b/issues -f state=open',
+    'gh api -X PATCH repos/a/b/issues/5 -f title=x']) assert.equal(run('Bash', { command: c }, NONE).status, 0, c);
+});
+test('the REST create of an issue where Boss decides needs the part for Boss', () => {
+  const r = rest(good, 'Decision: pay for the picture tool', NONE, `-f 'assignees[]=${process.env.BOSS_LOGIN || 'DigitalniHR'}'`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /Boss decides/);
+});
+test('(b) a title like an open issue is refused with its number and the order', () => {
+  const env = stub('open.json', [{ number: 2221, title: 'GitHub Actions jobs do not start: payment failed', state: 'open' }]);
+  const r = rest(good, 'GitHub Actions jobs do not start because the payment failed', env);
+  assert.equal(r.status, 2); assert.match(r.stderr, /#2221 \(open\) "GitHub Actions jobs do not start: payment failed"/);
+  assert.match(r.stderr, /Comment on #2221, or reopen #2221 if it is closed/); assert.match(r.stderr, /Not a duplicate of #2221: <why>/);
+  assert.equal(create(good, 'The page shows the new number').status, 0);   // gh issue create with no repository: no search
+  assert.equal(run('Bash', { command: `gh issue create -R a/b --title "GitHub Actions jobs do not start because the payment failed" --body "${inline(good)}"` }, env).status, 2);
+  assert.equal(run('mcp__github__issue_write', { method: 'create', owner: 'a', repo: 'b', title: 'GitHub Actions jobs do not start because the payment failed', body: good }, env).status, 2);
+});
+test('a closed issue counts for 30 days, not longer; a pull request and another code never count', () => {
+  const t = 'GitHub Actions jobs do not start: payment failed';
+  const new_ = 'GitHub Actions jobs do not start because the payment failed';
+  assert.equal(rest(good, new_, stub('c1.json', [{ number: 7, title: t, state: 'closed', closed_at: DAYS(10) }])).status, 2);
+  assert.equal(rest(good, new_, stub('c2.json', [{ number: 7, title: t, state: 'closed', closed_at: DAYS(45) }])).status, 0);
+  assert.equal(rest(good, new_, stub('c3.json', [{ number: 7, title: t, state: 'open', pull_request: true }])).status, 0);
+  assert.equal(rest(good, `[WEB-1] ${new_}`, stub('c4.json', [{ number: 7, title: `[WEB-2] ${t}`, state: 'open' }])).status, 0);
+  assert.equal(rest(good, 'The newsletter archive page loads slowly', stub('c5.json', [{ number: 7, title: t, state: 'open' }])).status, 0);
+});
+test('(c) the line "Not a duplicate of #n:" in the body passes', () => {
+  const env = stub('open2.json', [{ number: 2221, title: 'GitHub Actions jobs do not start: payment failed', state: 'open' }]);
+  assert.equal(rest(`${good}\nNot a duplicate of #2221: this one is the runner of another repository.`, undefined, env).status, 0);
+  assert.equal(rest(`${good}\nNot a duplicate of #2221:`, undefined, env).status, 2);   // a reason is needed
+});
+test('(d) a search error passes', () => {
+  assert.equal(rest(good, undefined, stub('err.json', 'error')).status, 0);
+  assert.equal(rest(good, undefined, { ISSUE_SEARCH_STUB: path.join(tmp, 'missing-stub.json') }).status, 0);
+});
+test('similar titles: code, stop words, numbers and the 60 % rule', async () => {
+  const { similarTitle, titleWords } = await import('../issue-format.mjs');
+  assert.ok(similarTitle('Actions jobs do not start: payment failed', 'GitHub Actions jobs do not start because payment failed'));
+  assert.ok(!similarTitle('Actions jobs do not start', 'The report shows a wrong number'));
+  assert.ok(!similarTitle('[A-1] Actions jobs do not start', '[A-2] Actions jobs do not start'));
+  assert.deepEqual(titleWords('[SYS.2] The 3 jobs of the page'), ['jobs', 'page']);
 });

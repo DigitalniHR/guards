@@ -9,6 +9,10 @@
 // The title of a new or renamed issue is a plain sentence, and for a Boss issue it names his act (titleUnclear).
 // A `Proof date:` more than PROOF_DAYS_MAX days ahead is refused in a new issue, an edit and a comment (proofDateFar,
 // system#204): a proof that waits longer is split into a part that can be proved now and the rest.
+// A new issue is also checked against the open issues and those closed in the last 30 days of its repository
+// (duplicateOf, system#736): a hit is refused until the agent comments on or reopens the first issue, or the body says
+// "Not a duplicate of #n: <why>". The same checks run on the REST create (`gh api -X POST repos/<o>/<r>/issues`) that
+// cloud sessions and routines use.
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -59,6 +63,7 @@ export function bossOwned(body, command = '', assignees = []) {
   const b = String(body || '');
   return /^\W*boss decides\s*:/im.test(b) || /^\W*owner\s*:\W*boss\s*\(/im.test(b)
     || (BOSS_LOGIN && new RegExp(`(?:--assignee|-a)[ =]["']?[^"'\\s]*\\b${BOSS_LOGIN}\\b`).test(String(command)))
+    || (BOSS_LOGIN && new RegExp(`assignees\\[\\][ =]*["']?${BOSS_LOGIN}\\b`).test(String(command)))
     || (BOSS_LOGIN && (assignees || []).includes(BOSS_LOGIN));
 }
 // The repository of a `gh issue create`: its -R/--repo flag, else the origin remote of the working folder; null if unknown.
@@ -287,6 +292,93 @@ export function bodyOf(command, cwd) {
   return '';
 }
 
+// The REST create of an issue: `gh api -X POST repos/<owner>/<repo>/issues` (POST by default when a field is given), not
+// /comments, /labels or /sub_issues. Returns { repo, command, assignees } where `command` is the same call as a
+// `gh issue create --title ... --body ...` text, so the title, body and form checks are the ones of that command; null
+// when the call is no REST create. `--input <file>` reads the JSON of the issue (title, body, assignees); `--input -`
+// cannot be read here (returns { repo, command: null }).
+export function restCreate(command, cwd) {
+  const m = command.match(/(?<![\w/-])repos\/([\w.-]+)\/([\w.-]+)\/issues(?=["'\s;&|)]|$)/);
+  if (!m) return null;
+  const method = command.match(/(?<![\w-])(?:-X|--method)[ =]["']?([A-Za-z]+)/);
+  const hasFields = /(?<![\w-])(?:-f|-F|--field|--raw-field|--input)(?![\w-])/.test(command);
+  const verb = method ? method[1].toUpperCase() : (hasFields ? 'POST' : 'GET');
+  if (verb !== 'POST') return null;
+  const repo = `${m[1]}/${m[2]}`;
+  const input = command.match(/(?<![\w-])--input[ =](?:"([^"]+)"|'([^']+)'|([^\s;&|)]+))/);
+  const assignees = [...command.matchAll(/(?<![\w-])(?:-f|-F|--field|--raw-field)[ =]["']?assignees\[\][ =]*([\w.-]+)/g)].map((x) => x[1]);
+  if (input) {
+    let p = expand(input[1] || input[2] || input[3]);
+    if (p === '-' || p.includes('$')) return { repo, command: null, assignees };
+    const full = path.isAbsolute(p) ? p : path.join(cwd, p);
+    let json = {};
+    try { json = JSON.parse(writtenInCommand(command, p) ?? (existsSync(full) ? readFileSync(full, 'utf8') : '{}')); } catch { return { repo, command: null, assignees }; }
+    const a = Array.isArray(json.assignees) ? json.assignees : assignees;
+    const q = (x) => `"${String(x ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+    return { repo, command: `gh issue create --title ${q(json.title)} --body ${q(json.body)}`, assignees: a };
+  }
+  const flag = '(?<![\\w-])(?:-f|-F|--field|--raw-field)[ =]';
+  const rewritten = command
+    .replace(new RegExp(`${flag}(["']?)body=@`), '--body-file $1')
+    .replace(new RegExp(`${flag}(["']?)body=`), '--body $1')
+    .replace(new RegExp(`${flag}(["']?)title=`), '--title $1');
+  return { repo, command: rewritten, assignees };
+}
+
+// Duplicates of a new issue (system#736). Same cause: reopen, no second issue (standards/github.md, Issues).
+const STOP = new Set('a an the and or of to in on at for from by with is are was were be been it its this that these those as not no do does did has have had can could will would should we you they he she i our your their new into out up down over under about after before when while then than so if but all any more most one two issue issues'.split(' '));
+export const LEADING_CODE = /^\s*((?:\[[^\]]*\]\s*)+)/;
+export function titleCode(title) { const m = String(title || '').match(LEADING_CODE); return m ? m[1].replace(/\s+/g, '').toLowerCase() : ''; }
+// The significant words of a title: after the code, no stop words, no numbers, at least 2 letters.
+export function titleWords(title) {
+  const text = String(title || '').replace(LEADING_CODE, '').toLowerCase();
+  const words = text.match(/[\p{L}][\p{L}\p{N}]*/gu) || [];
+  return [...new Set(words.filter((w) => w.length >= 2 && !STOP.has(w)))];
+}
+// Similar = the same leading code and at least 60 % of the significant words of the shorter title shared (at least 2 words).
+export const SIMILAR = 0.6;
+export function similarTitle(a, b) {
+  if (titleCode(a) !== titleCode(b)) return false;
+  const x = titleWords(a), y = titleWords(b);
+  if (!x.length || !y.length) return false;
+  const set = new Set(y), shared = x.filter((w) => set.has(w)).length;
+  return shared >= Math.min(2, x.length, y.length) && shared / Math.min(x.length, y.length) >= SIMILAR;
+}
+export const DAYS_CLOSED = 30, SEARCH_MS = 5000;
+// The open issues and those closed in the last 30 days of the repository that look like the title: [{ number, title, state }].
+// ISSUE_SEARCH_STUB (a JSON file; the word "error" makes the search fail) replaces GitHub in tests. A timeout or an error
+// returns [] (the create passes; the sorter of the issue engineer stays the net).
+export function searchSimilar(repo, title, now = new Date()) {
+  try {
+    let items;
+    if (process.env.ISSUE_SEARCH_STUB) {
+      const raw = readFileSync(process.env.ISSUE_SEARCH_STUB, 'utf8');
+      if (raw.trim() === 'error') throw new Error('stub error');
+      items = JSON.parse(raw);
+    } else {
+      const words = titleWords(title).sort((p, q) => q.length - p.length).slice(0, 5);
+      if (!words.length) return [];
+      const out = execFileSync('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=repo:${repo} is:issue ${words.join(' ')} in:title`, '-f', 'per_page=30', '--jq', '[.items[] | {number, title, state, closed_at, pull_request: (.pull_request != null)}]'],
+        { encoding: 'utf8', timeout: SEARCH_MS, stdio: ['ignore', 'pipe', 'ignore'] });
+      items = JSON.parse(out);
+    }
+    const since = now.getTime() - DAYS_CLOSED * 86400000;
+    return items.filter((i) => i && !i.pull_request && similarTitle(title, i.title)
+      && (i.state === 'open' || (i.closed_at ? new Date(i.closed_at).getTime() >= since : true)))
+      .map((i) => ({ number: i.number, title: i.title, state: i.state }));
+  } catch { return []; }
+}
+export const DUPLICATE_LINE = /^\W*not a duplicate of #\d+\s*:\s*\S/im;
+export function duplicateOf(repo, title, body, now = new Date()) {
+  if (!repo || !title || DUPLICATE_LINE.test(String(body || ''))) return [];
+  return searchSimilar(repo, title, now);
+}
+export function duplicateRule(hits) {
+  const list = hits.map((h) => `#${h.number} (${h.state}) "${h.title}"`).join('; ');
+  const first = hits.map((h) => h.number).sort((a, b) => a - b)[0];
+  return `Blocked: the same cause may already have an issue: ${list}. Comment on #${first}, or reopen #${first} if it is closed; open a new issue only for another cause, and then add the line "Not a duplicate of #${first}: <why>" to the body (standards/github.md, Issues, rule 1).`;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {   // run as a hook, not imported
   // `node issue-format.mjs --text-missing < body`: the CAO owner check on an open issue; prints missing or ok, exit 1 or 0.
   if (process.argv[2] === '--text-missing') { const m = textMissing(readFileSync(0, 'utf8')); console.log(m ? 'missing' : 'ok'); process.exit(m ? 1 : 0); }
@@ -320,7 +412,21 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       const create = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+create\b/.test(bare);
       const edit = /(?:^|[;&|(]\s*|\n\s*)gh\s+issue\s+edit\b/.test(bare);
       const comment = /(?:^|[;&|(]\s*|\n\s*)gh\s+(?:issue|pr)\s+comment\b/.test(bare);
-      if (!create && !edit && !comment) process.exit(0);
+      const rest = /(?:^|[;&|(]\s*|\n\s*)gh\s+api\b/.test(bare) && !create && !edit && !comment ? restCreate(command, String(input.cwd || process.cwd())) : null;
+      if (!create && !edit && !comment && !rest) process.exit(0);
+      if (rest) {   // `gh api -X POST repos/<o>/<r>/issues`: checked as the issue command it stands for
+        if (rest.command === null) process.exit(0);
+        const cwd = String(input.cwd || process.cwd());
+        body = bodyOf(rest.command, cwd);
+        if (body === null) process.exit(0);
+        const t = rest.command.match(/(?<![\w-])--title[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+))/);
+        title = t ? (t[1] ?? t[2] ?? t[3]) : '';
+        if (title.includes('$')) title = null;
+        repo = rest.repo;
+        boss = bossOwned(body, command, rest.assignees);
+        const far = proofDateFar(body);
+        if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
+      } else {
       body = bodyOf(command, String(input.cwd || process.cwd()));
       if (body === null) process.exit(0);
       const far = proofDateFar(body);
@@ -337,6 +443,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       }
       boss = bossOwned(body, command);
       repo = repoOf(command, String(input.cwd || process.cwd()));
+      }
     } else if (/add_issue_comment$/.test(tool)) {
       const far = proofDateFar(input.tool_input?.body);
       if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
@@ -381,6 +488,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and create the issue again.`);
       process.exit(2);
     }
+    const dups = duplicateOf(repo, title, body);
+    if (dups.length) { console.error(duplicateRule(dups)); process.exit(2); }
   } catch (e) {
     console.error(`Blocked: issue-format hook error (${e.message}). The rule: ${RULE}.`);
     process.exit(2);
