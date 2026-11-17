@@ -77,6 +77,26 @@ export function repoOf(command, cwd) {
   } catch { return null; }
 }
 
+// Who acts next and the kind (standards/github.md, rule 20): a new issue of a repository of the owner names exactly one
+// assignee, the agent or Boss, and an issue type (Task, Bug, Feature). `gh issue create` has no type flag (gh 2.82):
+// there the type follows by PATCH and the daily check I2 is the net; the REST create and the MCP create carry it.
+function readAccounts() { try { return JSON.parse(readFileSync(new URL('../accounts.json', import.meta.url), 'utf8')); } catch { return {}; } }
+const ACCOUNTS = readAccounts();
+export const TYPES = ['Task', 'Bug', 'Feature'];
+export const ASSIGN_RULE = `a new issue names who acts next and its kind: exactly one assignee (${ACCOUNTS.agent || 'Agent-digihr'} for agent work, ${ACCOUNTS.boss || 'DigitalniHR'} where Boss decides) and a type (Task, Bug or Feature). gh issue create: --assignee ${ACCOUNTS.agent || 'Agent-digihr'}, then gh api -X PATCH repos/<o>/<r>/issues/<n> -f type=Task; one REST call: gh api -X POST repos/<o>/<r>/issues ... -f 'assignees[]=${ACCOUNTS.agent || 'Agent-digihr'}' -f type=Task (standards/github.md, rule 20)`;
+export function cliAssignees(command) {
+  const out = [];
+  for (const m of String(command).matchAll(/(?<![\w-])(?:--assignee|-a)[ =](?:"([^"]*)"|'([^']*)'|([^\s;&|)]+))/g)) out.push(...(m[1] ?? m[2] ?? m[3]).split(','));
+  return out.map((x) => x.trim()).filter(Boolean).map((x) => (x === '@me' ? (ACCOUNTS.agent || 'Agent-digihr') : x));
+}
+export function assignMissing(repo, assignees, type, typeNeeded = true) {
+  if (!repo || !ACCOUNTS.owner || !String(repo).startsWith(`${ACCOUNTS.owner}/`)) return [];
+  const gaps = [], who = [...new Set(assignees || [])];
+  if (who.length !== 1 || ![ACCOUNTS.agent, ACCOUNTS.boss].includes(who[0])) gaps.push(`one assignee, ${ACCOUNTS.agent} or ${ACCOUNTS.boss} (now: ${who.join(', ') || 'none'})`);
+  if (typeNeeded && !TYPES.includes(String(type || ''))) gaps.push(`a type: Task, Bug or Feature (now: ${type || 'none'})`);
+  return gaps;
+}
+
 // The lite form of every issue (Boss approved it on 13 Nov 2026, system#479; standards/evals.md): What and why, Done
 // when with the proof in each line; an issue where Boss decides also has Boss decides, Options, Recommendation and the
 // class line "Owner: Boss (<class>)". The assignee says who acts next (system#526).
@@ -307,22 +327,24 @@ export function restCreate(command, cwd) {
   const repo = `${m[1]}/${m[2]}`;
   const input = command.match(/(?<![\w-])--input[ =](?:"([^"]+)"|'([^']+)'|([^\s;&|)]+))/);
   const assignees = [...command.matchAll(/(?<![\w-])(?:-f|-F|--field|--raw-field)[ =]["']?assignees\[\][ =]*([\w.-]+)/g)].map((x) => x[1]);
+  const tm = command.match(/(?<![\w-])(?:-f|-F|--field|--raw-field)[ =]["']?type=["']?([\w-]+)/);
+  const type = tm ? tm[1] : null;
   if (input) {
     let p = expand(input[1] || input[2] || input[3]);
-    if (p === '-' || p.includes('$')) return { repo, command: null, assignees };
+    if (p === '-' || p.includes('$')) return { repo, command: null, assignees, type };
     const full = path.isAbsolute(p) ? p : path.join(cwd, p);
     let json = {};
-    try { json = JSON.parse(writtenInCommand(command, p) ?? (existsSync(full) ? readFileSync(full, 'utf8') : '{}')); } catch { return { repo, command: null, assignees }; }
+    try { json = JSON.parse(writtenInCommand(command, p) ?? (existsSync(full) ? readFileSync(full, 'utf8') : '{}')); } catch { return { repo, command: null, assignees, type }; }
     const a = Array.isArray(json.assignees) ? json.assignees : assignees;
     const q = (x) => `"${String(x ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-    return { repo, command: `gh issue create --title ${q(json.title)} --body ${q(json.body)}`, assignees: a };
+    return { repo, command: `gh issue create --title ${q(json.title)} --body ${q(json.body)}`, assignees: a, type: json.type ?? type };
   }
   const flag = '(?<![\\w-])(?:-f|-F|--field|--raw-field)[ =]';
   const rewritten = command
     .replace(new RegExp(`${flag}(["']?)body=@`), '--body-file $1')
     .replace(new RegExp(`${flag}(["']?)body=`), '--body $1')
     .replace(new RegExp(`${flag}(["']?)title=`), '--title $1');
-  return { repo, command: rewritten, assignees };
+  return { repo, command: rewritten, assignees, type };
 }
 
 // Duplicates of a new issue (system#736). Same cause: reopen, no second issue (standards/github.md, Issues).
@@ -401,7 +423,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   let input = {};
   try { input = JSON.parse(readFileSync(0, 'utf8') || '{}'); } catch { process.exit(0); }
   const tool = String(input.tool_name || '');
-  let body, title, repo, boss;
+  let body, title, repo, boss, who = [], kind = null, typeNeeded = true;
   try {
     if (tool === 'Bash') {
       const command = String(input.tool_input?.command || '');
@@ -424,6 +446,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
         if (title.includes('$')) title = null;
         repo = rest.repo;
         boss = bossOwned(body, command, rest.assignees);
+        who = rest.assignees || []; kind = rest.type;
         const far = proofDateFar(body);
         if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
       } else {
@@ -443,6 +466,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       }
       boss = bossOwned(body, command);
       repo = repoOf(command, String(input.cwd || process.cwd()));
+      who = cliAssignees(command); typeNeeded = false;
       }
     } else if (/add_issue_comment$/.test(tool)) {
       const far = proofDateFar(input.tool_input?.body);
@@ -464,6 +488,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       title = input.tool_input?.title;
       repo = input.tool_input?.owner && input.tool_input?.repo ? `${input.tool_input.owner}/${input.tool_input.repo}` : null;
       boss = bossOwned(body, '', input.tool_input?.assignees || []);
+      who = input.tool_input?.assignees || []; kind = input.tool_input?.type;
     } else process.exit(0);
     if (titleMissing(repo, title)) {
       console.error(`Blocked: an issue of ${repo} names its objective or initiative first in the title: [<AREA>.<objective>] or [<AREA>-n], for example "[SYS.2] ...". Find the code in the roadmap of the repository and create the issue again.`);
@@ -486,6 +511,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     }
     if (textMissing(body)) {
       console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and create the issue again.`);
+      process.exit(2);
+    }
+    const unassigned = assignMissing(repo, who, kind, typeNeeded);
+    if (unassigned.length) {
+      console.error(`Blocked: ${ASSIGN_RULE}. Missing: ${unassigned.join('; ')}. Create the issue again with them.`);
       process.exit(2);
     }
     const dups = duplicateOf(repo, title, body);

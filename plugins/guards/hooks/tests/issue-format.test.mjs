@@ -175,9 +175,9 @@ test('a dhr issue without an objective code in the title is blocked (dhr#717)', 
   assert.equal(r.status, 2); assert.match(r.stderr, /objective or initiative/);
 });
 test('a dhr issue with [SYS.2] or [WEB-15] passes; another repository needs no code', () => {
-  assert.equal(run('Bash', { command: 'gh issue create -R DigitalniHR/dhr --title "[SYS.2] The page shows the new number" --body-file good.md' }).status, 0);
-  assert.equal(run('Bash', { command: 'gh issue create --repo DigitalniHR/dhr --title "[WEB-15] The page shows the new number" --body-file good.md' }).status, 0);
-  assert.equal(run('Bash', { command: 'gh issue create -R DigitalniHR/system --title "The page shows the new number" --body-file good.md' }).status, 0);
+  assert.equal(run('Bash', { command: 'gh issue create -R DigitalniHR/dhr --title "[SYS.2] The page shows the new number" --body-file good.md --assignee Agent-digihr' }).status, 0);
+  assert.equal(run('Bash', { command: 'gh issue create --repo DigitalniHR/dhr --title "[WEB-15] The page shows the new number" --body-file good.md --assignee Agent-digihr' }).status, 0);
+  assert.equal(run('Bash', { command: 'gh issue create -R DigitalniHR/system --title "The page shows the new number" --body-file good.md --assignee Agent-digihr' }).status, 0);
 });
 test('the MCP create of a dhr issue without a code is blocked', () => {
   assert.equal(run('mcp__github__issue_write', { method: 'create', owner: 'DigitalniHR', repo: 'dhr', title: 'The page shows the new number', body: good }).status, 2);
@@ -370,7 +370,7 @@ test('a Proof date more than 2 days ahead is refused; today and 2 days ahead pas
 const stub = (name, content) => { const f = path.join(tmp, name); fs.writeFileSync(f, typeof content === 'string' ? content : JSON.stringify(content)); return { ISSUE_SEARCH_STUB: f }; };
 const NONE = stub('none.json', []);
 const rest = (body, title = 'GitHub Actions jobs do not start because payment failed', env = NONE, extra = '') =>
-  run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="${title}" -f body="${inline(body)}" -f 'assignees[]=Agent-digihr' ${extra}` }, env);
+  run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="${title}" -f body="${inline(body)}" -f 'assignees[]=Agent-digihr' -f type=Task ${extra}` }, env);
 const DAYS = (n) => new Date(Date.now() - n * 86400000).toISOString();
 
 test('(a) a REST create with a body that lacks Done when is blocked; a complete one passes', () => {
@@ -378,7 +378,7 @@ test('(a) a REST create with a body that lacks Done when is blocked; a complete 
   assert.equal(r.status, 2); assert.match(r.stderr, /Missing: Done when/);
   assert.equal(rest(good).status, 0);
   assert.equal(run('Bash', { command: `gh api --method POST "repos/DigitalniHR/jobboard/issues" -f title="The page shows the new number" -F body=@${path.join(tmp, 'bad.md')}` }, NONE).status, 2);
-  assert.equal(run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="The page shows the new number" -F body=@${path.join(tmp, 'good.md')}` }, NONE).status, 0);
+  assert.equal(run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="The page shows the new number" -F body=@${path.join(tmp, 'good.md')} -f 'assignees[]=Agent-digihr' -f type=Task` }, NONE).status, 0);
 });
 test('a REST create with --input is read from the JSON file', () => {
   fs.writeFileSync(path.join(tmp, 'bad.json'), JSON.stringify({ title: 'The page shows the new number', body: 'no form' }));
@@ -428,4 +428,30 @@ test('similar titles: code, stop words, numbers and the 60 % rule', async () => 
   assert.ok(!similarTitle('Actions jobs do not start', 'The report shows a wrong number'));
   assert.ok(!similarTitle('[A-1] Actions jobs do not start', '[A-2] Actions jobs do not start'));
   assert.deepEqual(titleWords('[SYS.2] The 3 jobs of the page'), ['jobs', 'page']);
+});
+
+// standards/github.md rule 20: a new issue of the owner names one assignee (agent or Boss) and a type.
+test('rule 20: a new issue of the owner needs one assignee and a type', () => {
+  const cmd = (extra) => run('Bash', { command: `gh issue create -R DigitalniHR/system --title "The page shows the new number" --body-file good.md ${extra}` }, NONE);
+  let r = cmd('');
+  assert.equal(r.status, 2); assert.match(r.stderr, /one assignee, Agent-digihr or DigitalniHR \(now: none\)/);
+  assert.equal(cmd('--assignee Agent-digihr,DigitalniHR').status, 2);   // two: who acts next is unclear
+  assert.equal(cmd('-a someone').status, 2);
+  assert.equal(cmd('-a "@me"').status, 0);   // an agent signs in as Agent-digihr
+  assert.match(cmd('--assignee DigitalniHR').stderr, /Boss decides/);   // assigned to Boss: the part for Boss is the next check
+  assert.equal(run('Bash', { command: 'gh issue create -R a/b --title "The page shows the new number" --body-file good.md' }, NONE).status, 0);   // not a repository of the owner
+  const restCmd = (extra) => run('Bash', { command: `gh api -X POST repos/DigitalniHR/jobboard/issues -f title="The page shows the new number" -F body=@${path.join(tmp, 'good.md')} ${extra}` }, NONE);
+  r = restCmd(`-f 'assignees[]=Agent-digihr'`);
+  assert.equal(r.status, 2); assert.match(r.stderr, /a type: Task, Bug or Feature \(now: none\)/);
+  assert.equal(restCmd(`-f 'assignees[]=Agent-digihr' -f type=Epic`).status, 2);
+  assert.equal(restCmd(`-f type=Bug`).status, 2);
+  assert.equal(restCmd(`-f 'assignees[]=Agent-digihr' -f type=Bug`).status, 0);
+  const mcp = (extra) => run('mcp__github__issue_write', { method: 'create', owner: 'DigitalniHR', repo: 'studio', title: 'The page shows the new number', body: good, ...extra }, NONE);
+  assert.equal(mcp({ assignees: ['Agent-digihr'] }).status, 2);
+  assert.equal(mcp({ type: 'Task' }).status, 2);
+  assert.equal(mcp({ assignees: ['Agent-digihr'], type: 'Task' }).status, 0);
+  fs.writeFileSync(path.join(tmp, 'typed.json'), JSON.stringify({ title: 'The page shows the new number', body: good, assignees: ['Agent-digihr'], type: 'Feature' }));
+  assert.equal(run('Bash', { command: `gh api -X POST repos/DigitalniHR/dhr/issues --input ${path.join(tmp, 'typed.json')}` }, NONE).status, 2);   // dhr needs a title code
+  fs.writeFileSync(path.join(tmp, 'typed2.json'), JSON.stringify({ title: 'The page shows the new number', body: good, assignees: ['Agent-digihr'], type: 'Feature' }));
+  assert.equal(run('Bash', { command: `gh api -X POST repos/DigitalniHR/system/issues --input ${path.join(tmp, 'typed2.json')}` }, NONE).status, 0);
 });
