@@ -80,6 +80,16 @@
       "name": "duplicate",
       "color": "cfd3d7",
       "description": "This issue already exists; closed with the link"
+    },
+    {
+      "name": "cco",
+      "color": "0e8a16",
+      "description": "One run of the CCO (weekly audit): numbers, big-task analysis, fixes"
+    },
+    {
+      "name": "cco:article",
+      "color": "0e8a16",
+      "description": "A new Claude article for the CCO: what it means for us, one change or close"
     }
   ],
   "families": [
