@@ -53,11 +53,32 @@ test('a symlinked user CLAUDE.md gets the worktree excludes; no link gets none (
   fs.unlinkSync(path.join(tmp, 'CLAUDE.md')); run(s);
   assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).claudeMdExcludes, ['/own/CLAUDE.md']);
 });
-test('the settings get the auto-compact window; a value of the owner stays (system#707)', () => {
+test('the settings get the auto-compact window; a lower value of the owner stays (system#707)', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
   fs.writeFileSync(s, JSON.stringify({ model: 'opus' }));
   assert.equal(run(s).status, 0);
   assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).autoCompactWindow, 200000);
-  fs.writeFileSync(s, JSON.stringify({ ...JSON.parse(fs.readFileSync(s, 'utf8')), autoCompactWindow: 500000 }));
-  run(s); assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).autoCompactWindow, 500000);
+  fs.writeFileSync(s, JSON.stringify({ ...JSON.parse(fs.readFileSync(s, 'utf8')), autoCompactWindow: 150000 }));
+  run(s); assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).autoCompactWindow, 150000);
+});
+test('the window is a cap: a higher, "auto" or per-model value is lowered to 200 k (system#748)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
+  fs.writeFileSync(s, JSON.stringify({ autoCompactWindow: 500000, modelSettings: {
+    'claude-opus-5-5': { autoCompactWindow: 1000000, effortLevel: 'high' }, 'claude-fable-5-2': { autoCompactWindow: 'auto' },
+    'claude-haiku-5-5': { autoCompactWindow: 120000 }, 'claude-sonnet-5-5': { effortLevel: 'low' } } }));
+  assert.equal(run(s).status, 0);
+  const got = JSON.parse(fs.readFileSync(s, 'utf8'));
+  assert.equal(got.autoCompactWindow, 200000);
+  assert.deepEqual(got.modelSettings, { 'claude-opus-5-5': { autoCompactWindow: 200000, effortLevel: 'high' },
+    'claude-fable-5-2': { autoCompactWindow: 200000 }, 'claude-haiku-5-5': { autoCompactWindow: 120000 }, 'claude-sonnet-5-5': { effortLevel: 'low' } });
+});
+test('a helper with no model starts on Sonnet, not the model of the thread; a value of the owner stays (system#748)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-')); const s = path.join(tmp, 'settings.json');
+  fs.writeFileSync(s, JSON.stringify({ model: 'opus[1m]', env: { FOO: '1' } }));
+  assert.equal(run(s).status, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(s, 'utf8')).env, { FOO: '1', CLAUDE_CODE_SUBAGENT_MODEL: 'sonnet' });
+  fs.writeFileSync(s, JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL: 'inherit' } }));
+  run(s); assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).env.CLAUDE_CODE_SUBAGENT_MODEL, 'sonnet');
+  fs.writeFileSync(s, JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL: 'haiku' } }));
+  run(s); assert.equal(JSON.parse(fs.readFileSync(s, 'utf8')).env.CLAUDE_CODE_SUBAGENT_MODEL, 'haiku');
 });

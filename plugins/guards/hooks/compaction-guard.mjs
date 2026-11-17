@@ -12,4 +12,4 @@ const file = path.join(dir, `${(input.session_id || 'unknown').replace(/[^\w-]/g
 let n = 0; try { n = parseInt(fs.readFileSync(file, 'utf8'), 10) || 0; } catch (e) { if (e.code !== 'ENOENT') warn(e); }   // no file = first compaction
 fs.writeFileSync(file, String(++n));
 // A session with no id (broken input) gets no reminder: there is no session to hand off from.
-if (input.session_id) console.log(`This session has had ${n} compaction${n > 1 ? 's' : ''}. Finish the current task here. Do not start new work here: hand off a new task with a short brief (hand_off_to_session or start_session).`);
+if (input.session_id) console.log(`This session has had ${n} compaction${n > 1 ? 's' : ''}. Finish the current task here. Do not start new work here: hand off a new task with a short brief (hand_off_to_session or start_session) and name its model: the smallest that fits (standards/model-choice.md), not the model of this thread.`);

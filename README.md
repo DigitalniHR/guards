@@ -13,5 +13,6 @@ clone fails it installs one hook that blocks every tool ("guards missing"), so a
 The installer also sets `claudeMdExcludes` (`excludes.mjs`): when `~/.claude/CLAUDE.md` is a symlink to a checkout (the Mac),
 the copies of that file in the worktrees of the same repository do not load again, so a session reads the global rules
 one time (system#673). With no symlink (the cloud) it sets no pattern.
-It also sets `autoCompactWindow` to 200,000 tokens when the settings have none, so a session compacts its history there and not at about 967 k (system#707); a value already in the settings stays.
+It also caps `autoCompactWindow` at 200,000 tokens, the top-level value and each `modelSettings.<model>` value (where `/autocompact` saves), so a session compacts its history there and not at about 967 k, and the compaction guard then tells it to hand off (system#707, system#748); a lower value stays.
+It sets `env.CLAUDE_CODE_SUBAGENT_MODEL` to `sonnet` when the settings have none (or `inherit`), so a helper started with no model does not run on the model of its thread (system#748); the cloud ignores this variable from settings.
 The hook refresh.mjs pulls and reinstalls at every session start. So every session in every repository (the Mac once, the cloud by the setup script of each environment) has them; the problem issue template asks for `Cause:` and `Research:` too.
