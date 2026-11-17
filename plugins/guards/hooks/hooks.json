@@ -1,5 +1,5 @@
 {
-  "description": "The guards for the Mac, the cloud and the routines: only real safety (no key-file read, no destructive command, one engineer per issue). refresh.mjs keeps the copy current at every session start.",
+  "description": "The guards for the Mac, the cloud and the routines: only real safety (no key-file read, no destructive command). refresh.mjs keeps the copy current at every session start.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,26 +9,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/forbidden-commands.mjs\"",
             "onFailure": "block"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__.*issue_write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claim-guard.mjs\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "mcp__.*issue_read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claim-guard.mjs\""
           }
         ]
       }

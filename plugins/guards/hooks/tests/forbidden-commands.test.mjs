@@ -135,7 +135,7 @@ test('a label delete is blocked; a remove from one issue passes', () => {
   for (const c of ['gh api -X DELETE repos/a/b/issues/4/labels/review', 'gh label list -R a/b', 'git push origin main'])
     assert.equal(run(c, tmp).status, 0, c);
 });
-// standards/github.md rule 15 (system#739): stash drop and clear lose the work of a parallel agent; a push of a stash passes.
+// skill github (system#739): stash drop and clear lose the work of a parallel agent; a push of a stash passes.
 test('git stash drop and clear are blocked; stash push passes', () => {
   for (const c of ['git stash drop', 'git stash clear', 'git -C x stash drop stash@{0}']) assert.equal(run(c, tmp).status, 2, c);
   assert.equal(run('git stash push -m mine', tmp).status, 0);
