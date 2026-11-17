@@ -250,6 +250,14 @@ test('an internal marker, an internal name, a file name or a long title is block
   assert.match(titleUnclear('The page ' + 'shows a number '.repeat(8)).join(), /at most 90 characters/);
   assert.deepEqual(titleUnclear('The backup of 8 Nov did not run at 13:00'), []);
 });
+test('an issue of an agent names the problem, not a step of Boss (dhr#772)', () => {
+  assert.match(titleUnclear('[SYS.2] Boss creates one Railway key so all 9 sources answer').join(), /does not name a step of Boss/);
+  assert.deepEqual(titleUnclear('[SYS.2] Access check of agents: 8 of 9 sources answer, Railway is missing'), []);
+  assert.deepEqual(titleUnclear('[SYS.2] Boss page shows the numbers of the week'), []);
+  assert.deepEqual(titleUnclear('[SYS.2] Boss creates one Railway key so all 9 sources answer', true), []);
+  const r = create(good, '[SYS.2] Boss creates one Railway key so all 9 sources answer');
+  assert.equal(r.status, 2); assert.match(r.stderr, /does not name a step of Boss/);
+});
 test('a Boss issue names his act in the title (system#381)', () => {
   assert.match(titleUnclear('[model-cost] The OpenRouter balance lasts 13 days', true).join(), /the act of Boss/);
   assert.deepEqual(titleUnclear('[model-cost] AI credit ends in 13 days: add 100 USD', true), []);

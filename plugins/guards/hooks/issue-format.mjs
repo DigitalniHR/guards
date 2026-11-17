@@ -26,7 +26,7 @@ export function titleMissing(repo, title) {
 // The title is the one line the reader sees in a list (Boss, 13 Nov 2026: he could not tell from the Tasks page what
 // system#381 "[model-cost] The OpenRouter balance lasts 13 days" and dhr#713 "[SYS.2] Accesses agents need" asked of
 // him). The rule is for the text after the leading codes ("[SYS.2]", "[model-cost]"); standard: standards/evals.md rule 8.
-export const TITLE_RULE = 'the title is one plain sentence of the outcome or the problem, for a reader who sees only this line: after the leading code at least 4 words and at most 90 characters, no code, file name or internal marker (words such as failed_items or worker:check); a title of an issue where Boss decides also names his act: "Boss <verb> ...", "Decision: <the choice>" or "<what happens>: <what Boss does>" (examples: "AI credit ends in 13 days: add 100 USD", "Boss grants 10 accesses that block agent work"; standard: system standards/evals.md)';
+export const TITLE_RULE = 'the title is one plain sentence of the outcome or the problem, for a reader who sees only this line: after the leading code at least 4 words and at most 90 characters, no code, file name or internal marker (words such as failed_items or worker:check); the issue of an agent names the problem, never a step of Boss; a title of an issue where Boss decides (his sub-issue) names his act: "Boss <verb> ...", "Decision: <the choice>" or "<what happens>: <what Boss does>" (examples: "AI credit ends in 13 days: add 100 USD", "Boss grants 10 accesses that block agent work"; standard: system standards/evals.md)';
 const TITLE_MIN = 4, TITLE_MAX = 90;
 const TITLE_TECH = [
   [/`/, 'code in backticks'],
@@ -36,7 +36,8 @@ const TITLE_TECH = [
 ];
 export function titleText(title) { return String(title || '').trim().replace(/^(?:\[[^\]]*\]\s*)+/, '').trim(); }
 // Reasons the title is unclear; an empty list passes. `boss` is true for an issue where Boss decides.
-export function titleUnclear(title, boss = false) {
+// `agentKnown` is false for a rename with no body: the guard cannot see who the issue is for, so it skips the check of the agent title.
+export function titleUnclear(title, boss = false, agentKnown = true) {
   const text = titleText(title);
   const out = [];
   const words = text.match(/[\p{L}\p{N}][\p{L}\p{N}'’.,%-]*/gu) || [];
@@ -44,6 +45,8 @@ export function titleUnclear(title, boss = false) {
   if (text.length > TITLE_MAX) out.push(`at most ${TITLE_MAX} characters after the code (it has ${text.length})`);
   for (const [re, what] of TITLE_TECH) if (re.test(text)) { out.push(`plain words (it has ${what}: "${text.match(re)[0]}")`); break; }
   if (boss && !bossAct(text)) out.push('the act of Boss ("Boss <verb> ...", "Decision: <the choice>" or "<what happens>: <what Boss does>")');
+  // The issue of an agent names the problem; a step of Boss is a sub-issue assigned to him (Boss, 17 Nov 2026, dhr#772).
+  if (!boss && agentKnown && /^Boss\s+[a-z]{2,}s\s/.test(text)) out.push('the problem or the end state: an issue of an agent does not name a step of Boss; open the step as a sub-issue for Boss (bin/sub_issues.py boss-step) and name this issue by the problem');
   return out;
 }
 // The act of Boss in a title: "Boss approves ...", "Decision: ..." or a part of at least 2 words after a colon.
@@ -459,7 +462,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       title = t ? (t[1] ?? t[2] ?? t[3]) : '';
       if (title.includes('$')) title = null;   // a shell variable the guard cannot see: do not block on a guess
       if (edit && !create) {   // an edit: the title rule for a new title, the public-content rule for a new body
-        const unclear = t && title !== null ? titleUnclear(title, bossOwned(body, command)) : [];
+        const unclear = t && title !== null ? titleUnclear(title, bossOwned(body, command), Boolean(body)) : [];
         if (unclear.length) { console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and edit the issue.`); process.exit(2); }
         if (body && textMissing(body)) { console.error(`Blocked: ${TEXT_RULE}. Add the full texts or the approval page and edit the issue again.`); process.exit(2); }
         process.exit(0);
@@ -477,7 +480,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       if (far) { console.error(`Blocked: ${PROOF_RULE}. The text has Proof date: ${far}. Write it again.`); process.exit(2); }
       const method = String(input.tool_input?.method || '');
       if (method === 'update' && typeof input.tool_input?.title === 'string') {
-        const unclear = titleUnclear(input.tool_input.title, bossOwned(input.tool_input?.body));
+        const unclear = titleUnclear(input.tool_input.title, bossOwned(input.tool_input?.body), Boolean(input.tool_input?.body));
         if (unclear.length) { console.error(`Blocked: ${TITLE_RULE}. Missing: ${unclear.join(', ')}. Write the title again and update the issue.`); process.exit(2); }
       }
       if (method === 'update' && typeof input.tool_input?.body === 'string' && textMissing(input.tool_input.body)) {
