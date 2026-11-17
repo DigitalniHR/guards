@@ -97,56 +97,6 @@
       "description": "Proof is a published Boss page: needs the Artifact tool; the Mac headless run never starts it"
     },
     {
-      "name": "class:access",
-      "color": "c5def5",
-      "description": "A key, login or right that a job needs is missing, dead or refused (token, secret, API key, account)"
-    },
-    {
-      "name": "class:job-down",
-      "color": "c5def5",
-      "description": "A job did not run or failed: routine, worker, auditor, cron, watcher, service"
-    },
-    {
-      "name": "class:wrong-number",
-      "color": "c5def5",
-      "description": "A check, report or tile shows a wrong, stale or missing number"
-    },
-    {
-      "name": "class:cost",
-      "color": "c5def5",
-      "description": "Spend on models or services: a swing, a wrong model, a credit or a plan limit"
-    },
-    {
-      "name": "class:guard",
-      "color": "c5def5",
-      "description": "A hook, gate or rule blocks good work or lets bad work pass"
-    },
-    {
-      "name": "class:queue",
-      "color": "c5def5",
-      "description": "Work waits: an issue not taken, no owner, a stuck claim, a session that waits"
-    },
-    {
-      "name": "class:content",
-      "color": "c5def5",
-      "description": "Reader copy: quality, Czech, approval or publication of a text"
-    },
-    {
-      "name": "class:data",
-      "color": "c5def5",
-      "description": "Wrong or missing data in a store: adverts, records, CRM, a sync"
-    },
-    {
-      "name": "class:page",
-      "color": "c5def5",
-      "description": "A page of a site: broken UI, wrong text, SEO or speed"
-    },
-    {
-      "name": "class:deploy",
-      "color": "c5def5",
-      "description": "A merged change is not live, or a deploy or build failed"
-    },
-    {
       "name": "needs:browser",
       "color": "5319e7",
       "description": "Next step needs a signed-in browser (Chrome tool); the Mac watcher never starts it"
@@ -159,7 +109,8 @@
     "client:*",
     "small",
     "large",
-    "seo-audit"
+    "seo-audit",
+    "data-defect"
   ],
   "defaults": [
     "bug",
@@ -176,7 +127,6 @@
     "review": "status:review",
     "problem": "",
     "owner:boss": "",
-    "later": "",
-    "data-defect": "class:data"
+    "later": ""
   }
 }
