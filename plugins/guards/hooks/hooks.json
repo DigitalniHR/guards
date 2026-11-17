@@ -32,7 +32,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*issue_write",
+        "matcher": "Bash|mcp__.*issue_write",
         "hooks": [
           {
             "type": "command",

@@ -1,5 +1,5 @@
 {
-  "about": "The one list of GitHub labels of the 4 repositories (standards/github.md, section Labels; system#508, system#515). bin/labels_sync.py makes each repository hold `canonical`; bin/github_check.py renames a label outside `canonical`, `families` or `defaults` and every `old` name on open issues (no guard blocks a label: Boss is never blocked).",
+  "about": "The one list of GitHub labels of the 4 repositories (standards/github.md, section Labels; system#508, system#515). bin/labels_sync.py makes each repository hold `canonical`; bin/github_check.py renames a label outside `canonical`, `families` or `defaults` and every `old` name on open issues; the hook claim-guard refuses an agent write of an off-list or old label (system#739); Boss is never blocked, the hook runs for agents only.",
   "canonical": [
     {
       "name": "in-progress",
