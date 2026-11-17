@@ -172,7 +172,7 @@ test('a flag inside another word is not read as the body flag', () => {
 
 test('a dhr issue without an objective code in the title is blocked (dhr#717)', () => {
   const r = run('Bash', { command: 'gh issue create -R DigitalniHR/dhr --title "CMO state of dhr is red" --body-file good.md' });
-  assert.equal(r.status, 2); assert.match(r.stderr, /objective or initiative/);
+  assert.equal(r.status, 2); assert.match(r.stderr, /objective or Epic/);
 });
 test('a dhr issue with [SYS.2] or [WEB-15] passes; another repository needs no code', () => {
   assert.equal(run('Bash', { command: 'gh issue create -R DigitalniHR/dhr --title "[SYS.2] The page shows the new number" --body-file good.md --assignee Agent-digihr' }).status, 0);

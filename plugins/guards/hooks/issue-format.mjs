@@ -16,7 +16,7 @@
 import { readFileSync, existsSync } from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-// Repositories whose issues name their objective or initiative first in the title (dhr#717: 6 open dhr issues were made
+// Repositories whose issues name their objective or Epic first in the title (dhr#717: 6 open dhr issues were made
 // outside `board.sh add`, which refuses a title without the code; the dhr report counts them as a defect).
 const TITLE_CODE = { 'digitalnihr/dhr': /^\[[A-Z]+[-.]\d+/ };
 export function titleMissing(repo, title) {
@@ -491,7 +491,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       who = input.tool_input?.assignees || []; kind = input.tool_input?.type;
     } else process.exit(0);
     if (titleMissing(repo, title)) {
-      console.error(`Blocked: an issue of ${repo} names its objective or initiative first in the title: [<AREA>.<objective>] or [<AREA>-n], for example "[SYS.2] ...". Find the code in the roadmap of the repository and create the issue again.`);
+      console.error(`Blocked: an issue of ${repo} names its objective or Epic first in the title: [<AREA>.<objective>] or [<AREA>-n], for example "[SYS.2] ...". Find the code in the roadmap of the repository and create the issue again.`);
       process.exit(2);
     }
     const unclear = title === null ? [] : titleUnclear(title, boss);
