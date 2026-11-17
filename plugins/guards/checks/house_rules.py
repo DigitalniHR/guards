@@ -1,4 +1,4 @@
-"""The code rules of the weekly cleaning that a check before the merge holds, one copy for every repository (system#699).
+"""The code rules of skill cleaning that a check before the merge holds, one copy for every repository (system#699).
 
 R4 (prompt text lives in a .md file, never in a .py file; studio#154): a string literal of a tracked .py file fails when
 it is long (MIN_CHARS or more; adjacent literals and the text parts of an f-string count as one) and reads like a model
@@ -9,7 +9,7 @@ R6 (no silent except; studio#155, dhr#822): a broad `except` (bare, `Exception`,
 the failed item with a code, or write the reason why nothing is lost as a # comment.
 
 Rule text: system skills/cleaning/done.md, "Code rules". Each repository runs this file in its tests from the public copy
-DigitalniHR/guards; the weekly cleaning runs the same file and takes its result for these parts of R4 and R6.
+DigitalniHR/guards.
 Usage: python3 -I house_rules.py [file.py ...]   (no files: every tracked .py file of the git checkout of the working folder)
 """
 import ast
