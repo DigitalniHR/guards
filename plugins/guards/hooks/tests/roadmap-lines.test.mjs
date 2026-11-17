@@ -22,6 +22,7 @@ test('an Epic line with #N is allowed', () => {
 
 test('a Later line with no state and no #N is allowed', () => {
   assert.equal(run('Write', { file_path: F, content: '  WEB-26 A page for later\n' }).status, 0);
+  assert.equal(run('Write', { file_path: F, content: '  WEB-27 Sestria now shows the salary\n' }).status, 0); // "now" in the text is no state
 });
 
 test('a file that is no roadmap file is ignored', () => {

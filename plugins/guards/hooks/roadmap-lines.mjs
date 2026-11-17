@@ -6,7 +6,7 @@ import fs from 'node:fs'; import { fileURLToPath } from 'node:url';
 
 export const MESSAGE = 'Blocked: an Epic line in work names its issue: `  WEB-25 #223 <one sentence>` (standards/github.md, I4). Create the Epic issue (type Feature) first, then write its number.';
 const EPIC = /^\s+[A-Z]+-\d+\s/;
-const STATE = /[◐●]|\bin progress\b|\bNow\b/i;
+const STATE = /[◐●]|\b[Ii]n progress\b|\bNow\b/; // "Now" is the state word; a lower-case "now" in a description is not
 
 export function isRoadmapFile(p) { return /\/roadmap\/[^/]+\.md$/.test(String(p || '')) || /ROADMAP\.md$/.test(String(p || '')); }
 
