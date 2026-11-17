@@ -95,6 +95,11 @@
       "name": "needs:artifact",
       "color": "5319e7",
       "description": "Proof is a published Boss page: needs the Artifact tool; the Mac headless run never starts it"
+    },
+    {
+      "name": "needs:browser",
+      "color": "5319e7",
+      "description": "Next step needs a signed-in browser (Chrome tool); the Mac watcher never starts it"
     }
   ],
   "families": [
