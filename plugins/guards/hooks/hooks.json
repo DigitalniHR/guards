@@ -1,16 +1,6 @@
 {
-  "description": "One set of guards for the Mac, the cloud and the routines (Boss, 8 Nov 2026). The three guard hooks fail closed (catalog C-04). refresh.mjs keeps the cloud copy current at every session start. On the Mac the checkout sync (bin/checkout_sync.sh --hook) is a SessionStart hook of ~/.claude/settings.json, outside this set.",
+  "description": "The guards for the Mac, the cloud and the routines: only real safety (no key-file read, no destructive command, one engineer per issue). refresh.mjs keeps the copy current at every session start.",
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/goal-prompt.mjs\""
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Monitor",
@@ -23,53 +13,16 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*(issue_write|add_issue_comment)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/issue-format.mjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|mcp__.*issue_write",
+        "matcher": "mcp__.*issue_write",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/claim-guard.mjs\""
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/roadmap-lines.mjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/goal-gate.mjs\"",
-            "onFailure": "block"
-          }
-        ]
       }
     ],
     "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/goal-check.mjs\""
-          }
-        ]
-      },
       {
         "matcher": "mcp__.*issue_read",
         "hooks": [
@@ -119,25 +72,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/refresh.mjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/compaction-guard.mjs\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/goal-stop.mjs\""
           }
         ]
       }

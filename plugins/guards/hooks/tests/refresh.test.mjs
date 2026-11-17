@@ -18,7 +18,7 @@ test('on the Mac a settings file without a guard gets every guard', () => {
   fs.writeFileSync(s, JSON.stringify({ model: 'x', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo own' }] }] } }));
   assert.equal(run(s).status, 0);
   const text = fs.readFileSync(s, 'utf8');
-  assert.match(text, /issue-format\.mjs/); assert.match(text, /echo own/); assert.match(text, /"model": "x"/);
+  assert.match(text, /forbidden-commands\.mjs/); assert.match(text, /echo own/); assert.match(text, /"model": "x"/);
   assert.deepEqual(missing(JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8')), text, dir), []);
 });
 test('a complete settings file is not written again', () => {
@@ -31,13 +31,13 @@ test('a guard removed from hooks.json leaves the settings (system#668)', () => {
   run(s); const full = JSON.parse(fs.readFileSync(s, 'utf8'));
   const gone = `node "${dir}/merge-gate.mjs"`;
   full.hooks.PreToolUse.unshift({ matcher: 'Bash', hooks: [{ type: 'command', command: gone, onFailure: 'block' }] });
-  full.hooks.Stop.unshift({ hooks: [{ type: 'command', command: 'echo own' }] });
+  (full.hooks.Stop ||= []).unshift({ hooks: [{ type: 'command', command: 'echo own' }] });
   fs.writeFileSync(s, JSON.stringify(full));
   const hj = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'));
   assert.deepEqual(stale(hj, fs.readFileSync(s, 'utf8'), dir), [gone]);
   assert.equal(run(s).status, 0);
   const text = fs.readFileSync(s, 'utf8');
-  assert.doesNotMatch(text, /merge-gate/); assert.match(text, /echo own/); assert.match(text, /goal-gate\.mjs/);
+  assert.doesNotMatch(text, /merge-gate/); assert.match(text, /echo own/); assert.match(text, /forbidden-commands\.mjs/);
   assert.deepEqual(stale(hj, text, dir), []);
 });
 test('a symlinked user CLAUDE.md gets the worktree excludes; no link gets none (system#673)', () => {

@@ -9,7 +9,6 @@ import fs from 'node:fs'; import path from 'node:path';
 // A session compacts its history at this many tokens (system#707). Without the setting a 1M model compacts at about
 // 967 k, and every request re-reads the whole history: in the week 9 to 15 Nov 2026 the tokens above 200 k cost 288 USD.
 // Docs: code.claude.com/docs/en/model-config, "Set the auto-compact window" (`autoCompactWindow`, for every model).
-// From the first compaction compaction-guard.mjs tells the session to finish and hand off.
 // The window is a cap (system#748): `modelSettings.<model>.autoCompactWindow` (where /autocompact saves) replaces the
 // top-level value for that model, and "auto" is the model's own window (about 967 k), so both are lowered to WINDOW too;
 // a lower value of the owner stays. Proof of 17 Nov 2026: a 100 k top-level window with a per-model 1,000,000 never compacted.

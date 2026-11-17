@@ -57,35 +57,3 @@ test('the hook runs when its path goes through a symlink (macOS /var is /private
   const r = spawnSync('node', [link], { input: JSON.stringify({ session_id: 's2', hook_event_name: 'PreToolUse', tool_name: 'mcp__github__issue_write', tool_input: { method: 'update', ...where, labels: ['x'] } }), encoding: 'utf8', env: { ...process.env, CLAIM_GUARD_DIR: tmp } });
   assert.equal(r.status, 2);
 });
-
-// Rules 6, 7, 8 of standards/github.md stop at the write (system#739).
-import { labelWriteReason, bashLabels } from '../claim-guard.mjs';
-const bash = (command) => run('PreToolUse', 'Bash', { command });
-
-test('rule 6: a label off the list is refused on create, update and in gh commands; a listed one passes', () => {
-  assert.match(labelWriteReason(['made-up-label']), /rule 6/);
-  assert.equal(labelWriteReason(['auditor', 'part:web', 'client:dhr', 'bug']), null);
-  assert.equal(run('PreToolUse', 'mcp__github__issue_write', { method: 'create', owner: 'a', repo: 'b', labels: ['made-up-label'] }).status, 2);
-  read(['auditor']);
-  assert.equal(write(['auditor', 'made-up-label']).status, 2);
-  assert.equal(bash('gh issue create --title x --label made-up-label').status, 2);
-  assert.equal(bash("gh api -X POST repos/a/b/issues/5/labels -f 'labels[]=made-up-label'").status, 2);
-  assert.equal(bash('gh label create made-up-label --color fff').status, 2);
-  assert.equal(bash('gh issue edit 5 --add-label auditor').status, 0);
-});
-
-test('rule 7: an old label name is refused with its new name; an issue that already carries it can still change', () => {
-  assert.match(labelWriteReason(['status:in-progress']), /rule 7.*in-progress/);
-  assert.equal(bash('gh issue edit 5 --add-label status:in-progress').status, 2);
-  read(['auditor', 'later']);
-  assert.equal(write(['auditor', 'later', 'repeat']).status, 0);
-});
-
-test('rule 8: two labels that contradict are refused', () => {
-  assert.match(labelWriteReason(['engineer:skip'], ['in-progress', 'engineer:skip']), /rule 8/);
-  assert.equal(bash('gh issue edit 5 --add-label in-progress,engineer:skip').status, 2);
-  read(['auditor', 'in-progress']);
-  assert.equal(write(['auditor', 'in-progress', 'status:review']).status, 2);
-  assert.deepEqual(bashLabels('gh issue edit 5 --remove-label later'), []);
-  assert.equal(bash('gh issue edit 5 --remove-label later').status, 0);
-});
