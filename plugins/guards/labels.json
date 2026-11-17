@@ -90,6 +90,11 @@
       "name": "cco:article",
       "color": "0e8a16",
       "description": "A new Claude article for the CCO: what it means for us, one change or close"
+    },
+    {
+      "name": "needs:artifact",
+      "color": "5319e7",
+      "description": "Proof is a published Boss page: needs the Artifact tool; the Mac headless run never starts it"
     }
   ],
   "families": [
