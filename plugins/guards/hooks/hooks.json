@@ -1,5 +1,5 @@
 {
-  "description": "The guards for the Mac, the cloud and the routines: only real safety (no key-file read, no destructive command). refresh.mjs keeps the copy current at every session start.",
+  "description": "The guards for the Mac, the cloud and the routines: real safety (no key-file read, no destructive command), and one reminder per prompt to split work onto the smallest model. refresh.mjs keeps the copy current at every session start.",
   "hooks": {
     "PreToolUse": [
       {
@@ -52,6 +52,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/refresh.mjs\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate-reminder.mjs\""
           }
         ]
       }
