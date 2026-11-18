@@ -34,7 +34,7 @@ test('unit: the scheduled task name of the transcript wins over the folder (syst
 test('unit: from the folder, also an issue-engineer worktree; a scratch folder with no task name has no unit', () => {
   const h = home();
   run(h, JSON.stringify({ cwd: '/Users/m/Claude projects/.issue-engineer/jobboard-12' }));
-  run(h, JSON.stringify({ cwd: '/Users/m/Claude projects/studio/core' }));
+  run(h, JSON.stringify({ cwd: '/Users/m/Claude projects/studio/seo' }));
   run(h, JSON.stringify({ cwd: '/Users/m/Library/Application Support/Claude/scratch-workspaces/a/b', transcript_path: '/nope' }));
   assert.deepEqual(lines(h).map((e) => e.unit), ['jobboard', 'studio', '']);
 });
