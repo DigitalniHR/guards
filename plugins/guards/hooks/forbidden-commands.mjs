@@ -1,6 +1,6 @@
 // PreToolUse hook for Bash and Monitor: blocks (exit 2) a command whose text
 // matches a forbidden pattern anywhere. Any error blocks too (fail closed).
-import { readFileSync } from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 
 try {
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}');
@@ -70,6 +70,26 @@ try {
       if (names.length && !unmerged.length) hit = undefined;
       else if (noRepo) hit = [hit[0], `git branch -D where the merge cannot be checked: ${cwd} is not a git repository with origin/main (${names.join(', ')})`, `run it in the repository (cd <repo> && ... or git -C <repo> ...)`];
       else if (unmerged.length) hit = [hit[0], `git branch -D of a branch not merged into origin/main (${unmerged.join(', ')})`, hit[2]];
+    }
+    // The system checkout on the Mac must stay on main: the SessionStart sync only fast-forwards main, so a branch
+    // made there leaves every new session on old rules (system#862, #344; branch content-doc-link, 18 Nov 2026).
+    // A branch-making command whose repository is that checkout (not a linked worktree) is blocked.
+    if (!hit && /\bgit\b[^\n;&|]*\b(?:checkout\s+[^\n;&|]*-[bB]\b|switch\b[^\n;&|]*(?:\s-[cC]\b|--(?:force-)?create\b))/.test(command)) {
+      const { execFileSync } = await import('node:child_process');
+      const path = await import('node:path');
+      const q = (re) => { const m = command.match(re); return m ? (m[1] ?? m[2] ?? m[3]) : null; };
+      const dirArg = q(/\bgit\s+-C\s+(?:"([^"]+)"|'([^']+)'|((?:\\\s|[^\s;&|])+))/) || q(/(?:^|[;&|]\s*)cd\s+(?:"([^"]+)"|'([^']+)'|((?:\\\s|[^\s;&|])+))\s*&&/);
+      const home = process.env.HOME || '~';
+      const dir = path.resolve(String(input.cwd || process.cwd()), dirArg ? dirArg.replace(/\\ /g, ' ').replace(/^~(?=\/|$)/, home).replace(/\$\{?HOME\}?/g, home) : '.');
+      try {
+        const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        const top = g('rev-parse', '--show-toplevel');
+        const main = path.resolve(dir, g('rev-parse', '--git-dir')) === path.resolve(dir, g('rev-parse', '--git-common-dir'));
+        const guarded = process.env.FORBIDDEN_SYNC_REPO || path.join(home, 'Claude projects', 'system');
+        if (main && fs.realpathSync(top) === fs.realpathSync(guarded)) {
+          hit = [/x/, 'a new branch in the system checkout (it must stay on main for the session sync, system#862)', 'work in your own worktree: git worktree add <path> -b <branch> origin/main'];
+        }
+      } catch { /* not a repository, or no guarded checkout here: nothing to protect */ }
     }
     if (hit) {
       console.error(`Blocked by Boss policy: ${hit[1]}. Safe way: ${hit[2]}. Do not retry the blocked command.`);

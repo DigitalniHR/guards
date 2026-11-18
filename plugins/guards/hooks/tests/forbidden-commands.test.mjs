@@ -145,3 +145,16 @@ test('a key file read is blocked; source of it passes', () => {
   for (const c of ['cat ~/.claude/.env', 'head -1 $HOME/.ssh/id_ed25519', 'base64 < ~/.claude/.env']) assert.equal(run(c, tmp).status, 2, c);
   assert.equal(run('set -a; source ~/.claude/.env; set +a', tmp).status, 0);
 });
+
+// system#862: a branch made in the system checkout stops the session sync; a worktree and other repositories pass.
+test('a new branch in the system checkout is blocked; a worktree, another repository and a switch of main pass', () => {
+  const sys = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-sys-'));
+  execFileSync('git', ['clone', '-q', bare, sys]);
+  const wt = path.join(tmp, 'wt862'); execFileSync('git', ['-C', sys, 'worktree', 'add', '-q', wt, '-b', 'w862']);
+  const runSys = (c, cwd) => spawnSync('node', [hook], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: c }, cwd }), encoding: 'utf8', env: { ...process.env, FORBIDDEN_SYNC_REPO: sys } });
+  for (const c of ['git checkout -b x', 'git switch -c x', `git -C "${sys}" checkout -b x`, `cd "${sys}" && git checkout -B x origin/main`]) {
+    const r = runSys(c, c.includes(sys) ? outside : sys); assert.equal(r.status, 2, c); assert.match(r.stderr, /system#862/);
+  }
+  for (const c of ['git checkout -b x', 'git switch -c x']) { assert.equal(runSys(c, wt).status, 0, `worktree ${c}`); assert.equal(runSys(c, repo).status, 0, `other ${c}`); }
+  assert.equal(runSys('git switch main', sys).status, 0);
+});
