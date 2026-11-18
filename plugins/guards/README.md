@@ -1,6 +1,6 @@
 # guards
 
-The guards of the DigitalniHR system for Claude Code: blocked destructive commands and patterns (`forbidden-commands`, `forbidden-patterns`), a permission gate, an event log, a claim guard (one engineer per issue: it keeps the engineer lock on `in-progress`) and `refresh`. One set for the Mac and for every cloud session. One code check for the CI of every repository: `checks/house_rules.py`, run from this public copy with `git clone -q --depth 1 https://github.com/DigitalniHR/guards "$RUNNER_TEMP/guards" && python3 -I "$RUNNER_TEMP/guards/plugins/guards/checks/house_rules.py"`.
+The guards of the DigitalniHR system for Claude Code: blocked destructive commands and patterns (`forbidden-commands`, `forbidden-patterns`), a permission gate, an event log, a claim guard (one engineer per issue: it keeps the engineer lock on Status In progress) and `refresh`. One set for the Mac and for every cloud session. One code check for the CI of every repository: `checks/house_rules.py`, run from this public copy with `git clone -q --depth 1 https://github.com/DigitalniHR/guards "$RUNNER_TEMP/guards" && python3 -I "$RUNNER_TEMP/guards/plugins/guards/checks/house_rules.py"`.
 
 This public repository is a read-only copy of `plugins/guards` of the private system repository, pushed by its workflow `Guards sync`. Do not edit it here.
 
