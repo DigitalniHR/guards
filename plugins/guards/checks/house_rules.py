@@ -8,6 +8,11 @@ R6 (no silent except; studio#155, dhr#822): a broad `except` (bare, `Exception`,
 `pass`, `continue`, `break`, `...` or a bare `return`/`return <constant>`, with no comment in the handler lines. Fix: log
 the failed item with a code, or write the reason why nothing is lost as a # comment.
 
+R2 (one way to call OpenRouter: through a client that writes the cost line; system#660): a file that names a paid
+OpenRouter address (`openrouter.ai/api/...`, every path but the free key read `v1/key`) and names no cost line
+(COST_NAMES) fails: its calls leave spend that the cost auditor cannot explain. A line with the comment `R2: <reason>`
+is a read with no paid call. Fix: call the shared client of the unit, or write one cost line per paid answer.
+
 Rule text: system skills/cleaning/done.md, "Code rules". Each repository runs this file in its tests from the public copy
 DigitalniHR/guards.
 Usage: python3 -I house_rules.py [file.py ...]   (no files: every tracked .py file of the git checkout of the working folder)
@@ -23,6 +28,8 @@ MARKER_WORDS = ("You are", "You convert", "Jsi ", r"Return (only )?JSON\b", "Vra
 MARKERS = re.compile(r"\b(" + "|".join(MARKER_WORDS) + ")", re.I)
 SKIP_DIRS = {"archive", "legacy", "tmp", "vendor", "venv", ".venv", "node_modules"}
 BROAD = {"Exception", "BaseException"}
+PAID = re.compile(r"openrouter\.ai/api/(?!v1/key\b)")
+COST_NAMES = re.compile(r"cost_line|model_cost|openrouter_client")
 
 
 def skipped(path):
@@ -86,11 +93,22 @@ def silent_excepts(tree, lines):
                 yield n.lineno
 
 
+def own_calls(source):
+    """R2: the line of each paid OpenRouter address in a file that names no cost line."""
+    if COST_NAMES.search(source):
+        return
+    for number, line in enumerate(source.split("\n"), 1):
+        if PAID.search(line) and "R2:" not in line:
+            yield number
+
+
 def findings(path, source):
     tree = ast.parse(source, filename=path)
     if not test_file(path):
         for line, head in prompts(tree):
             yield f"{path}:{line}: R4 prompt text in a script: {head!r}"
+        for line in own_calls(source):
+            yield f"{path}:{line}: R2 own OpenRouter call with no cost line"
     for line in silent_excepts(tree, source.split("\n")):
         yield f"{path}:{line}: R6 silent except"
 
@@ -108,10 +126,10 @@ def main(paths):
     for line in bad:
         print(line)
     if bad:
-        print(f"{len(bad)} finding(s). R4: move the prompt to prompts/<name>.md and read it at start. R6: log the failed item "
+        print(f"{len(bad)} finding(s). R2: call the shared OpenRouter client, or write one cost line per paid answer. R4: move the prompt to prompts/<name>.md and read it at start. R6: log the failed item "
               "with a code, or add a one-line reason as a # comment (cleaning, system skills/cleaning/done.md).")
     else:
-        print(f"house rules R4, R6: {len(paths)} file(s), 0 findings")
+        print(f"house rules R2, R4, R6: {len(paths)} file(s), 0 findings")
     return 1 if bad else 0
 
 

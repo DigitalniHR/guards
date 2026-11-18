@@ -34,6 +34,21 @@ class R4(unittest.TestCase):
         self.assertEqual(found("tests_php.py", src), [])
 
 
+class R2(unittest.TestCase):
+    CALL = 'import requests\nr = requests.post("https://openrouter.ai/api/v1/chat/completions", json={})\n'
+
+    def test_own_paid_call_with_no_cost_line_fails(self):
+        self.assertEqual(len(found("web/ui_audit.py", self.CALL)), 1)
+        self.assertEqual(len(found("app/rank.py", 'URL = "https://openrouter.ai/api/alpha/decisions"\n')), 1)
+        self.assertEqual(len(found("app/client.py", 'BASE = "https://openrouter.ai/api/v1"\n')), 1)
+
+    def test_a_cost_line_the_key_read_a_reason_and_a_test_pass(self):
+        self.assertEqual(found("web/ui_audit.py", self.CALL + "cost_line.write(r.json(), model=m, key=k)\n"), [])
+        self.assertEqual(found("core/web.py", 'KEY = "https://openrouter.ai/api/v1/key"\n'), [])
+        self.assertEqual(found("core/web.py", 'API = "https://openrouter.ai/api/v1/"  # R2: keys and activity only\n'), [])
+        self.assertEqual(found("tests/test_llm.py", self.CALL), [])
+
+
 class R6(unittest.TestCase):
     def test_silent_broad_except_fails(self):
         for body in ("pass", "continue", "return None", "..."):
