@@ -74,7 +74,7 @@ try {
     // The system checkout on the Mac must stay on main: the SessionStart sync only fast-forwards main, so a branch
     // made there leaves every new session on old rules (system#862, #344; branch content-doc-link, 18 Nov 2026).
     // A branch-making command whose repository is that checkout (not a linked worktree) is blocked.
-    if (!hit && /\bgit\b[^\n;&|]*\b(?:checkout\s+[^\n;&|]*-[bB]\b|switch\b[^\n;&|]*(?:\s-[cC]\b|--(?:force-)?create\b))/.test(command)) {
+    if (!hit && /\bgit\b[^\n;&|]*\b(?:checkout|switch)\b/.test(command)) {
       const { execFileSync } = await import('node:child_process');
       const path = await import('node:path');
       const q = (re) => { const m = command.match(re); return m ? (m[1] ?? m[2] ?? m[3]) : null; };
@@ -87,7 +87,14 @@ try {
         const main = path.resolve(dir, g('rev-parse', '--git-dir')) === path.resolve(dir, g('rev-parse', '--git-common-dir'));
         const guarded = process.env.FORBIDDEN_SYNC_REPO || path.join(home, 'Claude projects', 'system');
         if (main && fs.realpathSync(top) === fs.realpathSync(guarded)) {
-          hit = [/x/, 'a new branch in the system checkout (it must stay on main for the session sync, system#862)', 'work in your own worktree: git worktree add <path> -b <branch> origin/main'];
+          // A new branch, or a switch to any existing branch other than main (system#873: content-doc-link was switched to).
+          const making = /\bgit\b[^\n;&|]*\b(?:checkout\s+[^\n;&|]*-[bB]\b|switch\b[^\n;&|]*(?:\s-[cC]\b|--(?:force-)?create\b))/.test(command);
+          const seg = (command.match(/\bgit\b[^\n;&|]*\b(?:checkout|switch)\b([^\n;&|]*)/) || [])[1] || '';
+          const words = seg.trim().split(/\s+/).filter(Boolean);
+          const cut = words.indexOf('--');
+          const target = (cut < 0 ? words : words.slice(0, cut)).filter((w) => !w.startsWith('-'))[0];
+          const isBranch = target && target !== 'main' && ['refs/heads/', 'refs/remotes/origin/'].some((r) => { try { g('rev-parse', '--verify', '-q', r + target.replace(/^origin\//, '')); return true; } catch { return false; } });
+          if (making || isBranch) hit = [/x/, 'a branch other than main in the system checkout (it must stay on main for the session sync, system#862, system#873)', 'work in your own worktree: git worktree add <path> -b <branch> origin/main'];
         }
       } catch { /* not a repository, or no guarded checkout here: nothing to protect */ }
     }

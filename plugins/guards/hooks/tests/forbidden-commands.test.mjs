@@ -157,4 +157,11 @@ test('a new branch in the system checkout is blocked; a worktree, another reposi
   }
   for (const c of ['git checkout -b x', 'git switch -c x']) { assert.equal(runSys(c, wt).status, 0, `worktree ${c}`); assert.equal(runSys(c, repo).status, 0, `other ${c}`); }
   assert.equal(runSys('git switch main', sys).status, 0);
+  execFileSync('git', ['-C', sys, 'branch', 'b873', 'origin/main']);
+  // system#873: a switch to an existing branch also leaves the checkout off main.
+  for (const c of ['git checkout b873', 'git switch b873', `git -C "${sys}" checkout b873`]) {
+    const r = runSys(c, c.includes(sys) ? outside : sys); assert.equal(r.status, 2, c); assert.match(r.stderr, /system#873/);
+  }
+  for (const c of ['git checkout b873', 'git switch b873']) assert.equal(runSys(c, wt).status, 0, `worktree ${c}`);
+  for (const c of ['git checkout main', 'git switch main']) assert.equal(runSys(c, sys).status, 0, c);
 });
