@@ -13,6 +13,12 @@ OpenRouter address (`openrouter.ai/api/...`, every path but the free key read `v
 (COST_NAMES) fails: its calls leave spend that the cost auditor cannot explain. A line with the comment `R2: <reason>`
 is a read with no paid call. Fix: call the shared client of the unit, or write one cost line per paid answer.
 
+R7 (a Claude call stays on our Anthropic key; system#762): a file that names a paid OpenRouter address and has no provider
+pin (`allow_fallbacks` or `pin_anthropic`) fails: OpenRouter then routes a Claude call to Vertex or Azure, which never use
+our key, and the call is paid from the OpenRouter balance. Fix: use the shared client with `pin_anthropic`, or set
+`"provider": {"order": ["anthropic"], "allow_fallbacks": false}` for a Claude model. A line with `R7: <reason>` is a
+call of a non-Claude model or a read. A cost-line writer (file name starts `cost_line`) is exempt: it makes no model call.
+
 Rule text: system skills/cleaning/done.md, "Code rules". Each repository runs this file in its tests from the public copy
 DigitalniHR/guards.
 Usage: python3 -I house_rules.py [file.py ...]   (no files: every tracked .py file of the git checkout of the working folder)
@@ -29,6 +35,7 @@ MARKERS = re.compile(r"\b(" + "|".join(MARKER_WORDS) + ")", re.I)
 SKIP_DIRS = {"archive", "legacy", "tmp", "vendor", "venv", ".venv", "node_modules"}
 BROAD = {"Exception", "BaseException"}
 PAID = re.compile(r"openrouter\.ai/api/(?!v1/key\b)")
+PIN_NAMES = re.compile(r"allow_fallbacks|pin_anthropic")
 COST_NAMES = re.compile(r"cost_line|model_cost|openrouter_client")
 
 
@@ -102,6 +109,16 @@ def own_calls(source):
             yield number
 
 
+def unpinned_calls(path, source):
+    """R7: the line of each paid OpenRouter address in a file with no provider pin."""
+    if PIN_NAMES.search(source) or path.rsplit("/", 1)[-1].startswith("cost_line"):
+        return
+    for number, line in enumerate(source.split("\n"), 1):
+        if PAID.search(line) and "R7:" not in line and "R2:" not in line:
+            yield number
+            return  # one finding per file: the whole file lacks the pin
+
+
 def findings(path, source):
     tree = ast.parse(source, filename=path)
     if not test_file(path):
@@ -109,6 +126,8 @@ def findings(path, source):
             yield f"{path}:{line}: R4 prompt text in a script: {head!r}"
         for line in own_calls(source):
             yield f"{path}:{line}: R2 own OpenRouter call with no cost line"
+        for line in unpinned_calls(path, source):
+            yield f"{path}:{line}: R7 OpenRouter call with no provider pin (Claude may leave our Anthropic key)"
     for line in silent_excepts(tree, source.split("\n")):
         yield f"{path}:{line}: R6 silent except"
 

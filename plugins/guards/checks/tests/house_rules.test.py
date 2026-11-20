@@ -34,13 +34,25 @@ class R4(unittest.TestCase):
         self.assertEqual(found("tests_php.py", src), [])
 
 
+class R7(unittest.TestCase):
+    CALL = 'URL = "https://openrouter.ai/api/v1/chat/completions"  # cost_line\n'
+
+    def test_call_with_no_pin_fails(self):
+        self.assertEqual(len(found("app/llm.py", self.CALL)), 1)
+
+    def test_pinned_call_and_marked_line_pass(self):
+        self.assertEqual(found("app/llm.py", self.CALL + 'P = {"allow_fallbacks": False}\n'), [])
+        self.assertEqual(found("app/llm.py", self.CALL.replace("# cost_line", "# cost_line R7: GPT only")), [])
+        self.assertEqual(found("app/cost_line.py", self.CALL), [])
+
+
 class R2(unittest.TestCase):
-    CALL = 'import requests\nr = requests.post("https://openrouter.ai/api/v1/chat/completions", json={})\n'
+    CALL = 'import requests\nr = requests.post("https://openrouter.ai/api/v1/chat/completions", json={})  # allow_fallbacks\n'
 
     def test_own_paid_call_with_no_cost_line_fails(self):
         self.assertEqual(len(found("web/ui_audit.py", self.CALL)), 1)
-        self.assertEqual(len(found("app/rank.py", 'URL = "https://openrouter.ai/api/alpha/decisions"\n')), 1)
-        self.assertEqual(len(found("app/client.py", 'BASE = "https://openrouter.ai/api/v1"\n')), 1)
+        self.assertEqual(len(found("app/rank.py", 'URL = "https://openrouter.ai/api/alpha/decisions"  # allow_fallbacks\n')), 1)
+        self.assertEqual(len(found("app/client.py", 'BASE = "https://openrouter.ai/api/v1"  # allow_fallbacks\n')), 1)
 
     def test_a_cost_line_the_key_read_a_reason_and_a_test_pass(self):
         self.assertEqual(found("web/ui_audit.py", self.CALL + "cost_line.write(r.json(), model=m, key=k)\n"), [])
